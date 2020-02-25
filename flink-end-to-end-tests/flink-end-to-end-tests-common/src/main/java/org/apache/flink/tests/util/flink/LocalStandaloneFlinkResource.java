@@ -133,11 +133,6 @@ public class LocalStandaloneFlinkResource implements FlinkResource {
 		}
 
 		@Override
-		public void submitSQLJob(SQLJobSubmission job) throws IOException {
-			distribution.submitSQLJob(job);
-		}
-
-		@Override
 		public CompletableFuture<Void> closeAsync() {
 			try {
 				distribution.stopFlinkCluster();

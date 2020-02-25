@@ -60,7 +60,7 @@ public abstract class AbstractOrcColumnVector implements
 		throw new UnsupportedOperationException();
 	}
 
-	public static org.apache.flink.table.dataformat.vector.ColumnVector createFlinkVector(
+	public static org.apache.flink.table.dataformat.vector.ColumnVector createVector(
 			ColumnVector vector) {
 		if (vector instanceof LongColumnVector) {
 			return new OrcLongColumnVector((LongColumnVector) vector);
@@ -80,9 +80,9 @@ public abstract class AbstractOrcColumnVector implements
 	/**
 	 * Create flink vector by hive vector from constant.
 	 */
-	public static org.apache.flink.table.dataformat.vector.ColumnVector createFlinkVectorFromConstant(
+	public static org.apache.flink.table.dataformat.vector.ColumnVector createVectorFromConstant(
 			LogicalType type, Object value, int batchSize) {
-		return createFlinkVector(createHiveVectorFromConstant(type, value, batchSize));
+		return createVector(createHiveVectorFromConstant(type, value, batchSize));
 	}
 
 	/**

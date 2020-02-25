@@ -50,7 +50,6 @@ import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Consumer;
 
 import static org.apache.flink.core.memory.MemorySegmentFactory.allocateOffHeapUnsafeMemory;
 import static org.apache.flink.core.memory.MemorySegmentFactory.allocateUnpooledSegment;
@@ -495,32 +494,23 @@ public class MemoryManager {
 				reservations.compute(
 					memoryType,
 					(mt, currentlyReserved) -> {
-						long newReservedMemory = 0;
-						if (currentlyReserved != null) {
-							if (currentlyReserved < size) {
-								LOG.warn(
-									"Trying to release more memory {} than it was reserved {} so far for the owner {}",
-									size,
-									currentlyReserved,
-									owner);
-							}
-
-							newReservedMemory = releaseAndCalculateReservedMemory(size, memoryType, currentlyReserved);
+						if (currentlyReserved == null || currentlyReserved < size) {
+							LOG.warn(
+								"Trying to release more memory {} than it was reserved {} so far for the owner {}",
+								size,
+								currentlyReserved == null ? 0 : currentlyReserved,
+								owner);
+							//noinspection ReturnOfNull
+							return null;
+						} else {
+							return currentlyReserved - size;
 						}
-
-						return newReservedMemory == 0 ? null : newReservedMemory;
 					});
 			}
 			//noinspection ReturnOfNull
 			return reservations == null || reservations.isEmpty() ? null : reservations;
 		});
-	}
-
-	private long releaseAndCalculateReservedMemory(long memoryToFree, MemoryType memoryType, long currentlyReserved) {
-		final long effectiveMemoryToRelease = Math.min(currentlyReserved, memoryToFree);
-		budgetByType.releaseBudgetForKey(memoryType, effectiveMemoryToRelease);
-
-		return currentlyReserved - effectiveMemoryToRelease;
+		budgetByType.releaseBudgetForKey(memoryType, size);
 	}
 
 	private void checkMemoryReservationPreconditions(Object owner, MemoryType memoryType, long size) {
@@ -577,13 +567,6 @@ public class MemoryManager {
 	 *
 	 * <p>The OpaqueMemoryResource object returned from this method must be closed once not used any further.
 	 * Once all acquisitions have closed the object, the resource itself is closed.
-	 *
-	 * <p><b>Important:</b> The failure semantics are as follows: If the memory manager fails to reserve
-	 * the memory, the external resource initializer will not be called. If an exception is thrown when the
-	 * opaque resource is closed (last lease is released), the memory manager will still un-reserve the
-	 * memory to make sure its own accounting is clean. The exception will need to be handled by the caller of
-	 * {@link OpaqueMemoryResource#close()}. For example, if this indicates that native memory was not released
-	 * and the process might thus have a memory leak, the caller can decide to kill the process as a result.
 	 */
 	public <T extends AutoCloseable> OpaqueMemoryResource<T> getSharedMemoryResourceForManagedMemory(
 			String type,
@@ -593,9 +576,7 @@ public class MemoryManager {
 		// if we need to allocate the resource (no shared resource allocated, yet), this would be the size to use
 		final long numBytes = computeMemorySize(fractionToInitializeWith);
 
-		// initializer and releaser as functions that are pushed into the SharedResources,
-		// so that the SharedResources can decide in (thread-safely execute) when initialization
-		// and release should happen
+		// the initializer attempt to reserve the memory before actual initialization
 		final LongFunctionWithException<T, Exception> reserveAndInitialize = (size) -> {
 			try {
 				reserveMemory(type, MemoryType.OFF_HEAP, size);
@@ -606,8 +587,6 @@ public class MemoryManager {
 
 			return initializer.apply(size);
 		};
-
-		final Consumer<Long> releaser = (size) -> releaseMemory(type, MemoryType.OFF_HEAP, size);
 
 		// This object identifies the lease in this request. It is used only to identify the release operation.
 		// Using the object to represent the lease is a bit nicer safer than just using a reference counter.
@@ -620,7 +599,12 @@ public class MemoryManager {
 		// someone else before with a different value for fraction (should not happen in practice, though).
 		final long size = resource.size();
 
-		final ThrowingRunnable<Exception> disposer = () -> sharedResources.release(type, leaseHolder, releaser);
+		final ThrowingRunnable<Exception> disposer = () -> {
+				final boolean allDisposed = sharedResources.release(type, leaseHolder);
+				if (allDisposed) {
+					releaseMemory(type, MemoryType.OFF_HEAP, size);
+				}
+			};
 
 		return new OpaqueMemoryResource<>(resource.resourceHandle(), size, disposer);
 	}

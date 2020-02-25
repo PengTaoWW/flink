@@ -24,6 +24,7 @@ import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.api.common.typeutils.TypeSerializer;
 import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.api.java.typeutils.RowTypeInfo;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.DataStreamUtils;
 import org.apache.flink.streaming.experimental.SocketStreamIterator;
@@ -50,6 +51,7 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
  */
 public abstract class CollectStreamResult<C> extends BasicResult<C> implements DynamicResult<C> {
 
+	private final TypeInformation<Row> outputType;
 	private final SocketStreamIterator<Tuple2<Boolean, Row>> iterator;
 	private final CollectStreamTableSink collectTableSink;
 	private final ResultRetrievalThread retrievalThread;
@@ -60,15 +62,18 @@ public abstract class CollectStreamResult<C> extends BasicResult<C> implements D
 	protected AtomicReference<SqlExecutionException> executionException = new AtomicReference<>();
 
 	public CollectStreamResult(
+			RowTypeInfo outputType,
 			TableSchema tableSchema,
 			ExecutionConfig config,
 			InetAddress gatewayAddress,
 			int gatewayPort,
 			ClassLoader classLoader) {
+		this.outputType = outputType;
+
 		resultLock = new Object();
 
 		// create socket stream iterator
-		final TypeInformation<Tuple2<Boolean, Row>> socketType = Types.TUPLE(Types.BOOLEAN, tableSchema.toRowType());
+		final TypeInformation<Tuple2<Boolean, Row>> socketType = Types.TUPLE(Types.BOOLEAN, outputType);
 		final TypeSerializer<Tuple2<Boolean, Row>> serializer = socketType.createSerializer(config);
 		try {
 			// pass gateway port and address such that iterator knows where to bind to
@@ -83,6 +88,11 @@ public abstract class CollectStreamResult<C> extends BasicResult<C> implements D
 		retrievalThread = new ResultRetrievalThread();
 
 		this.classLoader = checkNotNull(classLoader);
+	}
+
+	@Override
+	public TypeInformation<Row> getOutputType() {
+		return outputType;
 	}
 
 	@Override

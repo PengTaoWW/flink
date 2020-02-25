@@ -37,16 +37,16 @@ public class OperatorState implements CompositeStateHandle {
 
 	private static final long serialVersionUID = -4845578005863201810L;
 
-	/** The id of the operator. */
+	/** id of the operator */
 	private final OperatorID operatorID;
 
-	/** The handles to states created by the parallel tasks: subtaskIndex -> subtaskstate. */
+	/** handles to non-partitioned states, subtaskindex -> subtaskstate */
 	private final Map<Integer, OperatorSubtaskState> operatorSubtaskStates;
 
-	/** The parallelism of the operator when it was checkpointed. */
+	/** parallelism of the operator when it was checkpointed */
 	private final int parallelism;
 
-	/** The maximum parallelism (for number of keygroups) of the operator when the job was first created. */
+	/** maximum parallelism of the operator when the job was first created */
 	private final int maxParallelism;
 
 	public OperatorState(OperatorID operatorID, int parallelism, int maxParallelism) {
@@ -84,10 +84,6 @@ public class OperatorState implements CompositeStateHandle {
 		} else {
 			return operatorSubtaskStates.get(subtaskIndex);
 		}
-	}
-
-	public Map<Integer, OperatorSubtaskState> getSubtaskStates() {
-		return Collections.unmodifiableMap(operatorSubtaskStates);
 	}
 
 	public Collection<OperatorSubtaskState> getStates() {
@@ -150,6 +146,10 @@ public class OperatorState implements CompositeStateHandle {
 	@Override
 	public int hashCode() {
 		return parallelism + 31 * Objects.hash(operatorID, operatorSubtaskStates);
+	}
+
+	public Map<Integer, OperatorSubtaskState> getSubtaskStates() {
+		return Collections.unmodifiableMap(operatorSubtaskStates);
 	}
 
 	@Override

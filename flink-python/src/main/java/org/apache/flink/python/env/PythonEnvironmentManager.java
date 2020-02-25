@@ -49,9 +49,4 @@ public interface PythonEnvironmentManager extends AutoCloseable {
 	 * @return The path of the RetrievalToken file.
 	 */
 	String createRetrievalToken() throws Exception;
-
-	/**
-	 * Returns the boot log of the Python Environment.
-	 */
-	String getBootLog() throws Exception;
 }

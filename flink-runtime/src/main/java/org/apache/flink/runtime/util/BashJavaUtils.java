@@ -20,8 +20,8 @@ package org.apache.flink.runtime.util;
 
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.TaskManagerOptions;
-import org.apache.flink.runtime.clusterframework.TaskExecutorProcessSpec;
-import org.apache.flink.runtime.clusterframework.TaskExecutorProcessUtils;
+import org.apache.flink.runtime.clusterframework.TaskExecutorResourceSpec;
+import org.apache.flink.runtime.clusterframework.TaskExecutorResourceUtils;
 import org.apache.flink.runtime.taskexecutor.TaskManagerRunner;
 
 import java.util.Arrays;
@@ -53,19 +53,19 @@ public class BashJavaUtils {
 
 	private static void getTmResourceDynamicConfigs(String[] args) throws Exception {
 		Configuration configuration = getConfigurationForStandaloneTaskManagers(args);
-		TaskExecutorProcessSpec taskExecutorProcessSpec = TaskExecutorProcessUtils.processSpecFromConfig(configuration);
-		System.out.println(EXECUTION_PREFIX + TaskExecutorProcessUtils.generateDynamicConfigsStr(taskExecutorProcessSpec));
+		TaskExecutorResourceSpec taskExecutorResourceSpec = TaskExecutorResourceUtils.resourceSpecFromConfig(configuration);
+		System.out.println(EXECUTION_PREFIX + TaskExecutorResourceUtils.generateDynamicConfigsStr(taskExecutorResourceSpec));
 	}
 
 	private static void getTmResourceJvmParams(String[] args) throws Exception {
 		Configuration configuration = getConfigurationForStandaloneTaskManagers(args);
-		TaskExecutorProcessSpec taskExecutorProcessSpec = TaskExecutorProcessUtils.processSpecFromConfig(configuration);
-		System.out.println(EXECUTION_PREFIX + TaskExecutorProcessUtils.generateJvmParametersStr(taskExecutorProcessSpec));
+		TaskExecutorResourceSpec taskExecutorResourceSpec = TaskExecutorResourceUtils.resourceSpecFromConfig(configuration);
+		System.out.println(EXECUTION_PREFIX + TaskExecutorResourceUtils.generateJvmParametersStr(taskExecutorResourceSpec));
 	}
 
 	private static Configuration getConfigurationForStandaloneTaskManagers(String[] args) throws Exception {
 		Configuration configuration = TaskManagerRunner.loadConfiguration(Arrays.copyOfRange(args, 1, args.length));
-		return TaskExecutorProcessUtils.getConfigurationMapLegacyTaskManagerHeapSizeToConfigOption(
+		return TaskExecutorResourceUtils.getConfigurationMapLegacyTaskManagerHeapSizeToConfigOption(
 			configuration, TaskManagerOptions.TOTAL_FLINK_MEMORY);
 	}
 

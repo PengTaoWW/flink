@@ -19,9 +19,9 @@
 package org.apache.flink.table.planner.plan.metadata
 
 import org.apache.flink.table.api.{TableConfig, TableException}
-import org.apache.flink.table.catalog.{CatalogManager, FunctionCatalog}
+import org.apache.flink.table.catalog.{CatalogManager, FunctionCatalog, GenericInMemoryCatalog}
 import org.apache.flink.table.expressions._
-import ApiExpressionUtils.intervalOfMillis
+import org.apache.flink.table.expressions.utils.ApiExpressionUtils.intervalOfMillis
 import org.apache.flink.table.functions.{FunctionIdentifier, UserDefinedFunctionHelper}
 import org.apache.flink.table.module.ModuleManager
 import org.apache.flink.table.planner.calcite.FlinkRelBuilder.PlannerNamedWindowProperty
@@ -49,6 +49,7 @@ import org.apache.flink.table.runtime.operators.rank.{ConstantRankRange, RankTyp
 import org.apache.flink.table.types.AtomicDataType
 import org.apache.flink.table.types.logical.{BigIntType, DoubleType, IntType, LogicalType, TimestampKind, TimestampType, VarCharType}
 import org.apache.flink.table.types.utils.TypeConversions
+
 import com.google.common.collect.{ImmutableList, Lists}
 import org.apache.calcite.jdbc.CalciteSchema
 import org.apache.calcite.plan._
@@ -68,10 +69,9 @@ import org.apache.calcite.sql.fun.{SqlCountAggFunction, SqlStdOperatorTable}
 import org.apache.calcite.sql.parser.SqlParserPos
 import org.apache.calcite.util.{DateString, ImmutableBitSet, ImmutableIntList, TimeString, TimestampString}
 import org.junit.{Before, BeforeClass}
+
 import java.math.BigDecimal
 import java.util
-
-import org.apache.flink.table.utils.CatalogManagerMocks
 
 import scala.collection.JavaConversions._
 
@@ -80,7 +80,10 @@ class FlinkRelMdHandlerTestBase {
   val tableConfig = new TableConfig()
   val rootSchema: SchemaPlus = MetadataTestUtil.initRootSchema()
 
-  val catalogManager: CatalogManager = CatalogManagerMocks.createEmptyCatalogManager()
+  val builtinCatalog = "default_catalog"
+  val builtinDatabase = "default_database"
+  val catalogManager = new CatalogManager(
+    builtinCatalog, new GenericInMemoryCatalog(builtinCatalog, builtinDatabase))
   val moduleManager = new ModuleManager
 
   // TODO batch RelNode and stream RelNode should have different PlannerContext

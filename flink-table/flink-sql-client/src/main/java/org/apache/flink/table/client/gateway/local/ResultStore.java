@@ -19,6 +19,7 @@
 package org.apache.flink.table.client.gateway.local;
 
 import org.apache.flink.api.common.ExecutionConfig;
+import org.apache.flink.api.java.typeutils.RowTypeInfo;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.JobManagerOptions;
 import org.apache.flink.runtime.net.ConnectionUtils;
@@ -62,6 +63,8 @@ public class ResultStore {
 			ExecutionConfig config,
 			ClassLoader classLoader) {
 
+		final RowTypeInfo outputType = new RowTypeInfo(schema.getFieldTypes(), schema.getFieldNames());
+
 		if (env.getExecution().inStreamingMode()) {
 			// determine gateway address (and port if possible)
 			final InetAddress gatewayAddress = getGatewayAddress(env.getDeployment());
@@ -69,6 +72,7 @@ public class ResultStore {
 
 			if (env.getExecution().isChangelogMode()) {
 				return new ChangelogCollectStreamResult<>(
+						outputType,
 						schema,
 						config,
 						gatewayAddress,
@@ -76,6 +80,7 @@ public class ResultStore {
 						classLoader);
 			} else {
 				return new MaterializedCollectStreamResult<>(
+						outputType,
 						schema,
 						config,
 						gatewayAddress,
@@ -89,7 +94,7 @@ public class ResultStore {
 			if (!env.getExecution().isTableMode()) {
 				throw new SqlExecutionException("Results of batch queries can only be served in table mode.");
 			}
-			return new MaterializedCollectBatchResult<>(schema, config, classLoader);
+			return new MaterializedCollectBatchResult<>(schema, outputType, config, classLoader);
 		}
 	}
 

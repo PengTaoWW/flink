@@ -39,22 +39,22 @@ public enum TaskSlotUtils {
 		.setNetworkMemory(new MemorySize(100 * 1024))
 		.build();
 
-	public static <T extends TaskSlotPayload> TaskSlotTableImpl<T> createTaskSlotTable(int numberOfSlots) {
+	public static TaskSlotTable createTaskSlotTable(int numberOfSlots) {
 		return createTaskSlotTable(
 			numberOfSlots,
-			createDefaultTimerService());
+			createDefaultTimerService(DEFAULT_SLOT_TIMEOUT));
 	}
 
-	public static <T extends TaskSlotPayload> TaskSlotTable<T> createTaskSlotTable(int numberOfSlots, Time timeout) {
+	public static TaskSlotTable createTaskSlotTable(int numberOfSlots, Time timeout) {
 		return createTaskSlotTable(
 			numberOfSlots,
 			createDefaultTimerService(timeout.toMilliseconds()));
 	}
 
-	private static <T extends TaskSlotPayload> TaskSlotTableImpl<T> createTaskSlotTable(
+	private static TaskSlotTable createTaskSlotTable(
 			int numberOfSlots,
 			TimerService<AllocationID> timerService) {
-		return new TaskSlotTableImpl<>(
+		return new TaskSlotTable(
 			numberOfSlots,
 			createTotalResourceProfile(numberOfSlots),
 			DEFAULT_RESOURCE_PROFILE,
@@ -68,10 +68,6 @@ public enum TaskSlotUtils {
 			result = result.merge(DEFAULT_RESOURCE_PROFILE);
 		}
 		return result;
-	}
-
-	public static TimerService<AllocationID> createDefaultTimerService() {
-		return createDefaultTimerService(DEFAULT_SLOT_TIMEOUT);
 	}
 
 	public static TimerService<AllocationID> createDefaultTimerService(long shutdownTimeout) {

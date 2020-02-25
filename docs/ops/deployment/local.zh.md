@@ -1,5 +1,5 @@
 ---
-title: "本地集群"
+title: "Local Cluster"
 nav-title: 'Local Cluster'
 nav-parent_id: deployment
 nav-pos: 2
@@ -31,7 +31,7 @@ Get a local Flink cluster up and running in a few simple steps.
 ## Setup: Download and Start Flink
 
 Flink runs on __Linux, Mac OS X, and Windows__.
-To be able to run Flink, the only requirement is to have a working __Java 8 or 11__ installation.
+To be able to run Flink, the only requirement is to have a working __Java 8.x__ installation.
 
 You can check the correct installation of Java by issuing the following command:
 

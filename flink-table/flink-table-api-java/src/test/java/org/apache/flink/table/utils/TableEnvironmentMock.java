@@ -18,11 +18,13 @@
 
 package org.apache.flink.table.utils;
 
+import org.apache.flink.table.api.EnvironmentSettings;
 import org.apache.flink.table.api.TableConfig;
 import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.api.internal.TableEnvironmentImpl;
 import org.apache.flink.table.catalog.CatalogManager;
 import org.apache.flink.table.catalog.FunctionCatalog;
+import org.apache.flink.table.catalog.GenericInMemoryCatalog;
 import org.apache.flink.table.module.ModuleManager;
 
 /**
@@ -64,7 +66,7 @@ public class TableEnvironmentMock extends TableEnvironmentImpl {
 
 	private static TableEnvironmentMock getInstance(boolean isStreamingMode) {
 		final TableConfig config = createTableConfig();
-		final CatalogManager catalogManager = CatalogManagerMocks.createEmptyCatalogManager();
+		final CatalogManager catalogManager = createCatalogManager();
 		final ModuleManager moduleManager = new ModuleManager();
 		return new TableEnvironmentMock(
 			catalogManager,
@@ -74,6 +76,14 @@ public class TableEnvironmentMock extends TableEnvironmentImpl {
 			createFunctionCatalog(config, catalogManager, moduleManager),
 			createPlanner(),
 			isStreamingMode);
+	}
+
+	private static CatalogManager createCatalogManager() {
+		return new CatalogManager(
+			EnvironmentSettings.DEFAULT_BUILTIN_CATALOG,
+			new GenericInMemoryCatalog(
+				EnvironmentSettings.DEFAULT_BUILTIN_CATALOG,
+				EnvironmentSettings.DEFAULT_BUILTIN_DATABASE));
 	}
 
 	private static TableConfig createTableConfig() {

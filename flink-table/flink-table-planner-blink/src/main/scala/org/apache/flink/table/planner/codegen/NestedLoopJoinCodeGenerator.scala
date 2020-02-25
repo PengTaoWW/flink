@@ -24,7 +24,7 @@ import org.apache.flink.table.planner.codegen.OperatorCodeGenerator.{INPUT_SELEC
 import org.apache.flink.table.runtime.operators.CodeGenOperatorFactory
 import org.apache.flink.table.runtime.operators.join.FlinkJoinType
 import org.apache.flink.table.runtime.typeutils.AbstractRowSerializer
-import org.apache.flink.table.runtime.util.{LazyMemorySegmentPool, ResettableExternalBuffer}
+import org.apache.flink.table.runtime.util.ResettableExternalBuffer
 import org.apache.flink.table.types.logical.RowType
 
 import org.apache.calcite.rex.RexNode
@@ -55,6 +55,8 @@ class NestedLoopJoinCodeGenerator(
   }
 
   def gen(): CodeGenOperatorFactory[BaseRow] = {
+    val config = ctx.tableConfig
+
     val exprGenerator = new ExprCodeGenerator(ctx, joinType.isOuter)
         .bindInput(leftType).bindSecondInput(rightType)
 
@@ -349,11 +351,10 @@ class NestedLoopJoinCodeGenerator(
     val open =
       s"""
          |$fieldTerm = new ${className[ResettableExternalBuffer]}(
+         |  $memManager,
          |  $ioManager,
-         |  new ${className[LazyMemorySegmentPool]}(
-         |    getContainingTask(),
-         |    $memManager,
-         |    (int) (computeMemorySize() / $memManager.getPageSize())),
+         |  $memManager.allocatePages(
+         |    getContainingTask(), (int) (computeMemorySize() / $memManager.getPageSize())),
          |  $serializer,
          |  false);
          |""".stripMargin

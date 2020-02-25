@@ -62,10 +62,10 @@ public class MailboxProcessor implements Closeable {
 	private static final Logger LOG = LoggerFactory.getLogger(MailboxProcessor.class);
 
 	/** The mailbox data-structure that manages request for special actions, like timers, checkpoints, ... */
-	protected final TaskMailbox mailbox;
+	private final TaskMailbox mailbox;
 
 	/** Action that is repeatedly executed if no action request is in the mailbox. Typically record processing. */
-	protected final MailboxDefaultAction mailboxDefaultAction;
+	private final MailboxDefaultAction mailboxDefaultAction;
 
 	/** A pre-created instance of mailbox executor that executes all mails. */
 	private final MailboxExecutor mainMailboxExecutor;
@@ -285,7 +285,7 @@ public class MailboxProcessor implements Closeable {
 		return suspendedDefaultAction != null;
 	}
 
-	protected boolean isMailboxLoopRunning() {
+	private boolean isMailboxLoopRunning() {
 		return mailboxLoopRunning;
 	}
 
@@ -303,11 +303,11 @@ public class MailboxProcessor implements Closeable {
 	 * Implementation of {@link MailboxDefaultAction.Controller} that is connected to a {@link MailboxProcessor}
 	 * instance.
 	 */
-	protected static final class MailboxController implements MailboxDefaultAction.Controller {
+	private static final class MailboxController implements MailboxDefaultAction.Controller {
 
 		private final MailboxProcessor mailboxProcessor;
 
-		protected MailboxController(MailboxProcessor mailboxProcessor) {
+		private MailboxController(MailboxProcessor mailboxProcessor) {
 			this.mailboxProcessor = mailboxProcessor;
 		}
 

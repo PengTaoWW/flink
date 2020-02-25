@@ -362,9 +362,7 @@ public class FunctionITCase extends AbstractTestBase {
 		try {
 			tableEnv.sqlUpdate(ddl2);
 		} catch (Exception e) {
-			assertEquals(
-				"Could not drop temporary system function. A function named 'f5' doesn't exist.",
-				e.getMessage());
+			assertEquals(e.getMessage(), "Temporary system function f5 doesn't exist");
 		}
 	}
 

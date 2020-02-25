@@ -396,7 +396,6 @@ object FlinkStreamRuleSets {
     // correlate
     StreamExecConstantTableFunctionScanRule.INSTANCE,
     StreamExecCorrelateRule.INSTANCE,
-    StreamExecPythonCorrelateRule.INSTANCE,
     // sink
     StreamExecSinkRule.INSTANCE
   )

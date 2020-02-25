@@ -25,11 +25,11 @@ import org.apache.flink.runtime.checkpoint.SubtaskState;
 import org.apache.flink.runtime.checkpoint.TaskState;
 import org.apache.flink.runtime.jobgraph.JobVertexID;
 import org.apache.flink.runtime.state.ChainedStateHandle;
+import org.apache.flink.runtime.state.OperatorStateHandle;
 import org.apache.flink.runtime.state.KeyGroupRange;
 import org.apache.flink.runtime.state.KeyGroupRangeOffsets;
 import org.apache.flink.runtime.state.KeyGroupsStateHandle;
 import org.apache.flink.runtime.state.KeyedStateHandle;
-import org.apache.flink.runtime.state.OperatorStateHandle;
 import org.apache.flink.runtime.state.OperatorStreamStateHandle;
 import org.apache.flink.runtime.state.StreamStateHandle;
 import org.apache.flink.runtime.state.filesystem.FileStateHandle;
@@ -53,7 +53,6 @@ import java.util.Map;
  * classes to stay the same.
  */
 @Internal
-@SuppressWarnings("deprecation")
 public class SavepointV1Serializer implements SavepointSerializer<SavepointV2> {
 
 	private static final byte NULL_HANDLE = 0;
@@ -165,11 +164,11 @@ public class SavepointV1Serializer implements SavepointSerializer<SavepointV2> {
 
 	private static SubtaskState deserializeSubtaskState(DataInputStream dis) throws IOException {
 		// Duration field has been removed from SubtaskState
-		dis.readLong();
+		long ignoredDuration = dis.readLong();
 
 		int len = dis.readInt();
 
-		if (SavepointSerializers.failWhenLegacyStateDetected) {
+		if (SavepointSerializers.FAIL_WHEN_LEGACY_STATE_DETECTED) {
 			Preconditions.checkState(len == 0,
 				"Legacy state (from Flink <= 1.1, created through the 'Checkpointed' interface) is " +
 					"no longer supported starting from Flink 1.4. Please rewrite your job to use " +

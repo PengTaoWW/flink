@@ -47,8 +47,7 @@ class StreamLogicalWindowAggregateRule
 
     val timeAttribute = windowExpression.operands.get(0)
     if (!FlinkTypeFactory.isTimeIndicatorType(timeAttribute.getType)) {
-      throw new TableException(s"Window aggregate can only be defined over a " +
-        s"time attribute column, but ${timeAttribute.getType} encountered.")
+      throw new TableException(s"Time attribute expected but ${timeAttribute.getType} encountered.")
     }
     timeAttribute
   }
@@ -68,19 +67,26 @@ class StreamLogicalWindowAggregateRule
 
   private[table] override def getTimeFieldReference(
       operand: RexNode,
-      timeAttributeIndex: Int,
+      windowExprIdx: Int,
       rowType: RelDataType): FieldReferenceExpression = {
-    if (!FlinkTypeFactory.isTimeIndicatorType(operand.getType)) {
-      throw new ValidationException("Window can only be defined over a time attribute column.")
+    operand match {
+        // match TUMBLE_ROWTIME and TUMBLE_PROCTIME
+      case c: RexCall if c.getOperands.size() == 1 &&
+        FlinkTypeFactory.isTimeIndicatorType(c.getType) =>
+        new FieldReferenceExpression(
+          rowType.getFieldList.get(windowExprIdx).getName,
+          fromLogicalTypeToDataType(toLogicalType(c.getType)),
+          0, // only one input, should always be 0
+          windowExprIdx)
+      case v: RexInputRef if FlinkTypeFactory.isTimeIndicatorType(v.getType) =>
+        new FieldReferenceExpression(
+          rowType.getFieldList.get(v.getIndex).getName,
+          fromLogicalTypeToDataType(toLogicalType(v.getType)),
+          0, // only one input, should always be 0
+          windowExprIdx)
+      case _ =>
+        throw new ValidationException("Window can only be defined over a time attribute column.")
     }
-
-    val fieldName = rowType.getFieldList.get(timeAttributeIndex).getName
-    val fieldType = rowType.getFieldList.get(timeAttributeIndex).getType
-    new FieldReferenceExpression(
-      fieldName,
-      fromLogicalTypeToDataType(toLogicalType(fieldType)),
-      0,
-      timeAttributeIndex)
   }
 
   def getOperandAsLong(call: RexCall, idx: Int): Long =

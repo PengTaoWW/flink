@@ -22,7 +22,7 @@ import org.apache.flink.annotation.Internal;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.ConfigurationUtils;
 import org.apache.flink.configuration.TaskManagerOptions;
-import org.apache.flink.runtime.clusterframework.TaskExecutorProcessUtils;
+import org.apache.flink.runtime.clusterframework.TaskExecutorResourceUtils;
 
 import static org.apache.flink.util.Preconditions.checkNotNull;
 
@@ -40,8 +40,8 @@ public abstract class AbstractContainerizedClusterClientFactory<ClusterID> imple
 			.getJobManagerHeapMemory(configuration)
 			.getMebiBytes();
 
-		final int taskManagerMemoryMB = TaskExecutorProcessUtils
-			.processSpecFromConfig(TaskExecutorProcessUtils.getConfigurationMapLegacyTaskManagerHeapSizeToConfigOption(
+		final int taskManagerMemoryMB = TaskExecutorResourceUtils
+			.resourceSpecFromConfig(TaskExecutorResourceUtils.getConfigurationMapLegacyTaskManagerHeapSizeToConfigOption(
 				configuration, TaskManagerOptions.TOTAL_PROCESS_MEMORY))
 			.getTotalProcessMemorySize()
 			.getMebiBytes();

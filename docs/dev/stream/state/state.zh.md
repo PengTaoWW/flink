@@ -374,7 +374,7 @@ val ttlConfig = StateTtlConfig
 另外可以选择增量式清理状态数据，在状态访问或/和处理时进行。如果某个状态开启了该清理策略，则会在存储后端保留一个所有状态的惰性全局迭代器。
 每次触发增量清理时，从迭代器中选择已经过期的数进行清理。
 
-该特性可以通过 `StateTtlConfig` 进行配置：
+该特性可以通过 `StateTtlConfig` 进行启用：
 
 <div class="codetabs" markdown="1">
 <div data-lang="java" markdown="1">
@@ -397,8 +397,8 @@ val ttlConfig = StateTtlConfig
 </div>
 </div>
 
-该策略有两个参数。 第一个是每次清理时检查状态的条目数，在每个状态访问时触发。第二个参数表示是否在处理每条记录时触发清理。
-Heap backend 默认会检查 5 条状态，并且关闭在每条记录时触发清理。
+该策略有两个参数。 第一个是每次清理时检查状态的条目数。如果启用，则始终按每个状态访问触发。第二个参数表示是否在处理每条记录时触发清理。
+If you enable the default background cleanup then this strategy will be activated for heap backend with 5 checked entries and without cleanup per record processing.
 
 **注意:**
 - 如果没有 state 访问，也没有处理数据，则不会清理过期数据。
@@ -409,10 +409,11 @@ Heap backend 默认会检查 5 条状态，并且关闭在每条记录时触发�
 
 ##### 在 RocksDB 压缩时清理
 
-如果使用 RocksDB state backend，则会启用 Flink 为 RocksDB 定制的压缩过滤器。RocksDB 会周期性的对数据进行合并压缩从而减少存储空间。
-Flink 提供的 RocksDB 压缩过滤器会在压缩时过滤掉已经过期的状态数据。
+如果使用 RocksDB state backend，还支持 Flink 为 RocksDB 定制的压缩过滤器。RocksDB 会周期性的对数据进行合并压缩从而减少存储空间。
+Flink 压缩过滤器会在压缩时过滤掉已经过期的状态数据。
 
-该特性可以通过 `StateTtlConfig` 进行配置：
+该特性默认是关闭的，可以通过 Flink 的配置项 `state.backend.rocksdb.ttl.compaction.filter.enabled` 或者调用 `RocksDBStateBackend::enableTtlCompactionFilter`
+启用该特性。然后通过如下方式让任何具有 TTL 配置的状态使用过滤器：
 
 <div class="codetabs" markdown="1">
 <div data-lang="java" markdown="1">
@@ -438,10 +439,13 @@ val ttlConfig = StateTtlConfig
 </div>
 </div>
 
-Flink 处理一定条数的状态数据后，会使用当前时间戳来检测 RocksDB 中的状态是否已经过期，
-你可以通过 `StateTtlConfig.newBuilder(...).cleanupInRocksdbCompactFilter(long queryTimeAfterNumEntries)` 方法指定处理状态的条数。
-时间戳更新的越频繁，状态的清理越及时，但由于压缩会有调用 JNI 的开销，因此会影响整体的压缩性能。
-RocksDB backend 的默认后台清理策略会每处理 1000 条数据进行一次。
+RocksDB compaction filter will query current timestamp, used to check expiration, from Flink every time
+after processing certain number of state entries.
+You can change it and pass a custom value to
+`StateTtlConfig.newBuilder(...).cleanupInRocksdbCompactFilter(long queryTimeAfterNumEntries)` method.
+Updating the timestamp more often can improve cleanup speed
+but it decreases compaction performance because it uses JNI call from native code.
+If you enable the default background cleanup then this strategy will be activated for RocksDB backend and the current timestamp will be queried each time 1000 entries have been processed.
 
 你还可以通过配置开启 RocksDB 过滤器的 debug 日志：
 `log4j.logger.org.rocksdb.FlinkCompactionFilter=DEBUG`

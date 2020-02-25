@@ -272,10 +272,6 @@ class PlannerExpressionConverter private extends ApiExpressionVisitor[PlannerExp
             assert(args.size == 1)
             Lower(args.head)
 
-          case LOWERCASE =>
-            assert(args.size == 1)
-            Lower(args.head)
-
           case SIMILAR =>
             assert(args.size == 2)
             Similar(args.head, args.last)
@@ -309,10 +305,6 @@ class PlannerExpressionConverter private extends ApiExpressionVisitor[PlannerExp
             Trim(trimMode, args(2), args(3))
 
           case UPPER =>
-            assert(args.size == 1)
-            Upper(args.head)
-
-          case UPPERCASE =>
             assert(args.size == 1)
             Upper(args.head)
 

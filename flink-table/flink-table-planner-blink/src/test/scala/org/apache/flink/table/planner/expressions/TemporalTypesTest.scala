@@ -83,13 +83,14 @@ class TemporalTypesTest extends ExpressionTestBase {
 
     testTableApi(
       localDateTime2Literal(localDateTime("2040-09-11 00:00:00.000")),
+      "'2040-09-11 00:00:00.000'.toTimestamp",
       "2040-09-11 00:00:00")
 
     testAllApis(
       "1500-04-30 12:00:00".cast(DataTypes.TIMESTAMP(3)),
       "'1500-04-30 12:00:00'.cast(SQL_TIMESTAMP)",
       "CAST('1500-04-30 12:00:00' AS TIMESTAMP(3))",
-      "1500-04-30 12:00:00.000")
+      "1500-04-30 12:00:00")
 
     testSqlApi(
       "TIMESTAMP '1500-04-30 12:00:00.123456789'",
@@ -208,14 +209,14 @@ class TemporalTypesTest extends ExpressionTestBase {
     testAllApis(
       'f0.cast(DataTypes.TIMESTAMP(3)),
       "f0.cast(SQL_TIMESTAMP)",
-      "CAST(f0 AS TIMESTAMP(3))",
-      "1990-10-14 00:00:00.000")
+      "CAST(f0 AS TIMESTAMP)",
+      "1990-10-14 00:00:00")
 
     testAllApis(
       'f1.cast(DataTypes.TIMESTAMP(3)),
       "f1.cast(SQL_TIMESTAMP)",
-      "CAST(f1 AS TIMESTAMP(3))",
-      "1970-01-01 10:20:45.000")
+      "CAST(f1 AS TIMESTAMP)",
+      "1970-01-01 10:20:45")
 
     testAllApis(
       'f2.cast(DataTypes.DATE),
@@ -258,12 +259,12 @@ class TemporalTypesTest extends ExpressionTestBase {
     testTableApi(
       'f15.cast(DataTypes.TIMESTAMP(3)),
       "f15.cast(SQL_TIMESTAMP)",
-      "2016-06-27 07:23:33.000")
+      "2016-06-27 07:23:33")
 
     testTableApi(
       'f15.toTimestamp,
       "f15.toTimestamp",
-      "2016-06-27 07:23:33.000")
+      "2016-06-27 07:23:33")
 
     testTableApi(
       'f8.cast(DataTypes.TIMESTAMP(3)).cast(DataTypes.BIGINT()),
@@ -272,7 +273,7 @@ class TemporalTypesTest extends ExpressionTestBase {
 
     testSqlApi(
       "CAST(CAST('123' as DECIMAL(5, 2)) AS TIMESTAMP)",
-      "1970-01-01 00:02:03.000000")
+      "1970-01-01 00:02:03")
 
     testSqlApi(
       "CAST(TIMESTAMP '1970-01-01 00:02:03' AS DECIMAL(5, 2))",
@@ -280,7 +281,7 @@ class TemporalTypesTest extends ExpressionTestBase {
 
     testSqlApi(
       "CAST(CAST('123' AS FLOAT) AS TIMESTAMP)",
-      "1970-01-01 00:02:03.000000")
+      "1970-01-01 00:02:03")
 
     testSqlApi(
       "CAST(TIMESTAMP '1970-01-01 00:02:03' AS FLOAT)",
@@ -288,7 +289,7 @@ class TemporalTypesTest extends ExpressionTestBase {
 
     testSqlApi(
       "CAST(CAST('123' AS DOUBLE) AS TIMESTAMP)",
-      "1970-01-01 00:02:03.000000")
+      "1970-01-01 00:02:03")
 
     testSqlApi(
       "CAST(TIMESTAMP '1970-01-01 00:02:03' AS DOUBLE)",
@@ -308,11 +309,11 @@ class TemporalTypesTest extends ExpressionTestBase {
 
     testSqlApi(
       "CAST(f0 AS TIMESTAMP(3) WITH LOCAL TIME ZONE)",
-      "1990-10-14 00:00:00.000")
+      "1990-10-14 00:00:00")
 
     testSqlApi(
       "CAST(f1 AS TIMESTAMP(3) WITH LOCAL TIME ZONE)",
-      "1970-01-01 10:20:45.000")
+      "1970-01-01 10:20:45")
 
     testSqlApi(
       s"CAST(${timestampTz("2018-03-14 01:02:03")} AS TIME)",
@@ -781,24 +782,12 @@ class TemporalTypesTest extends ExpressionTestBase {
     //testSqlApi("CEIL(TIMESTAMP '2018-03-20 06:10:31' TO HOUR)", "2018-03-20 07:00:00.000")
   }
 
-  private def timestampTz(str: String): String = {
-    val precision = extractPrecision(str)
-    timestampTz(str, precision)
+  private def timestampTz(str: String) = {
+    s"CAST(TIMESTAMP '$str' AS TIMESTAMP WITH LOCAL TIME ZONE)"
   }
 
-  private def timestampTz(str: String, precision: Int): String = {
+  private def timestampTz(str: String, precision: Int) = {
     s"CAST(TIMESTAMP '$str' AS TIMESTAMP($precision) WITH LOCAL TIME ZONE)"
-  }
-
-  // According to SQL standard, the length of second fraction is
-  // the precision of the Timestamp literal
-  private def extractPrecision(str: String): Int = {
-    val dot = str.indexOf('.')
-    if (dot == -1) {
-      0
-    } else {
-      str.length - dot - 1
-    }
   }
 
 
@@ -807,7 +796,7 @@ class TemporalTypesTest extends ExpressionTestBase {
     config.setLocalTimeZone(ZoneId.of("Asia/Shanghai"))
 
     testSqlApi(timestampTz("2018-03-14 19:01:02.123"), "2018-03-14 19:01:02.123")
-    testSqlApi(timestampTz("2018-03-14 19:00:00.010"), "2018-03-14 19:00:00.010")
+    testSqlApi(timestampTz("2018-03-14 19:00:00.010"), "2018-03-14 19:00:00.01")
 
     testSqlApi(
       timestampTz("2018-03-14 19:00:00.010") + " > " + "f25",
@@ -886,11 +875,11 @@ class TemporalTypesTest extends ExpressionTestBase {
       "true")
     testSqlApi(
       "CEIL(f17 TO HOUR)",
-      "1990-10-14 08:00:00.000"
+      "1990-10-14 08:00:00"
     )
     testSqlApi(
       "FLOOR(f17 TO DAY)",
-      "1990-10-14 00:00:00.000"
+      "1990-10-14 00:00:00"
     )
 
     // TIMESTAMP_ADD

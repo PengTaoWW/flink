@@ -574,9 +574,9 @@ public class FlinkSqlOperatorTable extends ReflectiveSqlOperatorTable {
 	public static final SqlFunction TO_BASE64 = new SqlFunction(
 		"TO_BASE64",
 		SqlKind.OTHER_FUNCTION,
-		ReturnTypes.cascade(ReturnTypes.explicit(SqlTypeName.VARCHAR), SqlTypeTransforms.TO_NULLABLE),
+		VARCHAR_2000_NULLABLE,
 		null,
-		OperandTypes.family(SqlTypeFamily.STRING),
+		OperandTypes.ANY,
 		SqlFunctionCategory.STRING);
 
 	public static final SqlFunction FROM_BASE64 = new SqlFunction(

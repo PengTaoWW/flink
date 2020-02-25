@@ -84,7 +84,13 @@ class TableSqlFunction(
   override def getRowType(
       typeFactory: RelDataTypeFactory,
       operandList: util.List[SqlNode]): RelDataType = {
-    functionImpl.getRowType(typeFactory)
+    val arguments = SqlUserDefinedTableMacro.convertArguments(
+      typeFactory, operandList, function, getNameAsId, false).toArray
+
+    functionImpl.getRowType(typeFactory, arguments, arguments.map {
+      case null => null.asInstanceOf[Class[_]]
+      case o => o.getClass
+    })
   }
 }
 

@@ -32,7 +32,6 @@ import org.apache.flink.kubernetes.utils.KubernetesUtils;
 import org.apache.flink.runtime.clusterframework.ApplicationStatus;
 import org.apache.flink.runtime.clusterframework.BootstrapTools;
 import org.apache.flink.runtime.clusterframework.ContaineredTaskManagerParameters;
-import org.apache.flink.runtime.clusterframework.TaskExecutorProcessUtils;
 import org.apache.flink.runtime.clusterframework.types.ResourceID;
 import org.apache.flink.runtime.clusterframework.types.ResourceProfile;
 import org.apache.flink.runtime.entrypoint.ClusterInformation;
@@ -120,12 +119,12 @@ public class KubernetesResourceManager extends ActiveResourceManager<KubernetesW
 			fatalErrorHandler,
 			resourceManagerMetricGroup);
 		this.clusterId = flinkConfig.getString(KubernetesConfigOptions.CLUSTER_ID);
-		this.defaultCpus = taskExecutorProcessSpec.getCpuCores().getValue().doubleValue();
+		this.defaultCpus = taskExecutorResourceSpec.getCpuCores().getValue().doubleValue();
 
 		this.kubeClient = createFlinkKubeClient();
 
 		this.taskManagerParameters =
-			ContaineredTaskManagerParameters.create(flinkConfig, taskExecutorProcessSpec, numSlotsPerTaskManager);
+			ContaineredTaskManagerParameters.create(flinkConfig, taskExecutorResourceSpec, numSlotsPerTaskManager);
 
 		this.taskManagerStartCommand = getTaskManagerStartCommand();
 	}
@@ -270,7 +269,7 @@ public class KubernetesResourceManager extends ActiveResourceManager<KubernetesW
 			defaultCpus,
 			env);
 
-		log.info("TaskManager {} will be started with {}.", podName, taskExecutorProcessSpec);
+		log.info("TaskManager {} will be started with {}.", podName, taskExecutorResourceSpec);
 		kubeClient.createTaskManagerPod(parameter);
 	}
 
@@ -339,6 +338,6 @@ public class KubernetesResourceManager extends ActiveResourceManager<KubernetesW
 
 	@Override
 	protected double getCpuCores(Configuration configuration) {
-		return TaskExecutorProcessUtils.getCpuCoresWithFallbackConfigOption(configuration, KubernetesConfigOptions.TASK_MANAGER_CPU);
+		return flinkConfig.getDouble(KubernetesConfigOptions.TASK_MANAGER_CPU, numSlotsPerTaskManager);
 	}
 }

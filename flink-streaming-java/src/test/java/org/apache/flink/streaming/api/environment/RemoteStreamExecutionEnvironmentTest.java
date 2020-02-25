@@ -47,7 +47,6 @@ import javax.annotation.Nullable;
 import java.util.Collection;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.stream.Stream;
 
 import static org.apache.flink.util.Preconditions.checkNotNull;
 import static org.hamcrest.Matchers.is;
@@ -134,12 +133,6 @@ public class RemoteStreamExecutionEnvironmentTest extends TestLogger {
 		@Override
 		public PipelineExecutorFactory getExecutorFactory(@Nonnull Configuration configuration) {
 			return new PipelineExecutorFactory() {
-
-				@Override
-				public String getName() {
-					return "my-name";
-				}
-
 				@Override
 				public boolean isCompatibleWith(@Nonnull Configuration configuration) {
 					return true;
@@ -160,11 +153,6 @@ public class RemoteStreamExecutionEnvironmentTest extends TestLogger {
 					};
 				}
 			};
-		}
-
-		@Override
-		public Stream<String> getExecutorNames() {
-			throw new UnsupportedOperationException("not implemented");
 		}
 	}
 

@@ -104,21 +104,11 @@ public final class StreamTableEnvironmentImpl extends TableEnvironmentImpl imple
 				"StreamTableEnvironment can not run in batch mode for now, please use TableEnvironment.");
 		}
 
-		// temporary solution until FLINK-15635 is fixed
-		ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+		CatalogManager catalogManager = new CatalogManager(
+			settings.getBuiltInCatalogName(),
+			new GenericInMemoryCatalog(settings.getBuiltInCatalogName(), settings.getBuiltInDatabaseName()));
 
 		ModuleManager moduleManager = new ModuleManager();
-
-		CatalogManager catalogManager = CatalogManager.newBuilder()
-			.classLoader(classLoader)
-			.config(tableConfig.getConfiguration())
-			.defaultCatalog(
-				settings.getBuiltInCatalogName(),
-				new GenericInMemoryCatalog(
-					settings.getBuiltInCatalogName(),
-					settings.getBuiltInDatabaseName()))
-			.executionConfig(executionEnvironment.getConfig())
-			.build();
 
 		FunctionCatalog functionCatalog = new FunctionCatalog(tableConfig, catalogManager, moduleManager);
 

@@ -30,11 +30,10 @@ import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.sink.RichSinkFunction;
 import org.apache.flink.streaming.api.functions.source.ContinuousFileMonitoringFunction;
-import org.apache.flink.streaming.api.functions.source.ContinuousFileReaderOperatorFactory;
+import org.apache.flink.streaming.api.functions.source.ContinuousFileReaderOperator;
 import org.apache.flink.streaming.api.functions.source.FileProcessingMode;
 import org.apache.flink.streaming.api.functions.source.TimestampedFileInputSplit;
 import org.apache.flink.test.util.AbstractTestBase;
-import org.apache.flink.util.ExceptionUtils;
 
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileUtil;
@@ -54,7 +53,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
 
 import static org.junit.Assert.assertEquals;
 
@@ -131,29 +129,40 @@ public class ContinuousFileProcessingITCase extends AbstractTestBase {
 		DataStream<TimestampedFileInputSplit> splits = env.addSource(monitoringFunction);
 		Assert.assertEquals(1, splits.getParallelism());
 
+		ContinuousFileReaderOperator<String> reader = new ContinuousFileReaderOperator<>(format);
 		TypeInformation<String> typeInfo = TypeExtractor.getInputFormatTypes(format);
 
 		// the readers can be multiple
-		DataStream<String> content = splits.transform("FileSplitReader", typeInfo, new ContinuousFileReaderOperatorFactory<>(format));
+		DataStream<String> content = splits.transform("FileSplitReader", typeInfo, reader);
 		Assert.assertEquals(PARALLELISM, content.getParallelism());
 
 		// finally for the sink we set the parallelism to 1 so that we can verify the output
 		TestingSinkFunction sink = new TestingSinkFunction();
 		content.addSink(sink).setParallelism(1);
 
-		CompletableFuture<Void> jobFuture = new CompletableFuture<>();
-		new Thread(() -> {
-			try {
-				env.execute("ContinuousFileProcessingITCase Job.");
-				jobFuture.complete(null);
-			} catch (Exception e) {
-				if (ExceptionUtils.findThrowable(e, SuccessException.class).isPresent()) {
-					jobFuture.complete(null);
-				} else {
-					jobFuture.completeExceptionally(e);
+		Thread job = new Thread() {
+
+			@Override
+			public void run() {
+				try {
+					env.execute("ContinuousFileProcessingITCase Job.");
+				} catch (Exception e) {
+					Throwable th = e;
+					for (int depth = 0; depth < 20; depth++) {
+						if (th instanceof SuccessException) {
+							return;
+						} else if (th.getCause() != null) {
+							th = th.getCause();
+						} else {
+							break;
+						}
+					}
+					e.printStackTrace();
+					Assert.fail(e.getMessage());
 				}
 			}
-		}).start();
+		};
+		job.start();
 
 		// The modification time of the last created file.
 		long lastCreatedModTime = Long.MIN_VALUE;
@@ -188,7 +197,8 @@ public class ContinuousFileProcessingITCase extends AbstractTestBase {
 			Assert.assertTrue(hdfs.exists(file));
 		}
 
-		jobFuture.get();
+		// wait for the job to finish.
+		job.join();
 	}
 
 	private static class TestingSinkFunction extends RichSinkFunction<String> {

@@ -231,9 +231,7 @@ public abstract class LongHybridHashTable extends BaseHybridHashTable {
 			LOG.info("LongHybridHashTable: Use dense mode!");
 			this.minKey = minKey;
 			this.maxKey = maxKey;
-			List<MemorySegment> segments = new ArrayList<>();
-			buildSpillReturnBuffers.drainTo(segments);
-			returnAll(segments);
+			buildSpillReturnBuffers.drainTo(availableMemory);
 
 			ArrayList<MemorySegment> dataBuffers = new ArrayList<>();
 
@@ -401,11 +399,11 @@ public abstract class LongHybridHashTable extends BaseHybridHashTable {
 		//        that single partition.
 		// 2) We can not guarantee that enough memory segments are available and read the partition
 		//    in, distributing its data among newly created partitions.
-		final int totalBuffersAvailable = this.internalPool.freePages() + this.buildSpillRetBufferNumbers;
+		final int totalBuffersAvailable = this.availableMemory.size() + this.buildSpillRetBufferNumbers;
 		if (totalBuffersAvailable != this.totalNumBuffers) {
 			throw new RuntimeException(String.format("Hash Join bug in memory management: Memory buffers leaked." +
 							" availableMemory(%s), buildSpillRetBufferNumbers(%s), reservedNumBuffers(%s)",
-					this.internalPool.freePages(), buildSpillRetBufferNumbers, totalNumBuffers));
+					availableMemory.size(), buildSpillRetBufferNumbers, totalNumBuffers));
 		}
 
 		int maxBucketAreaBuffers = MathUtils.roundUpToPowerOfTwo(
@@ -502,7 +500,7 @@ public abstract class LongHybridHashTable extends BaseHybridHashTable {
 		// grab as many buffers as are available directly
 		MemorySegment currBuff;
 		while (this.buildSpillRetBufferNumbers > 0 && (currBuff = this.buildSpillReturnBuffers.poll()) != null) {
-			returnPage(currBuff);
+			this.availableMemory.add(currBuff);
 			this.buildSpillRetBufferNumbers--;
 		}
 		numSpillFiles++;
@@ -517,7 +515,7 @@ public abstract class LongHybridHashTable extends BaseHybridHashTable {
 		for (int i = this.partitionsBeingBuilt.size() - 1; i >= 0; --i) {
 			final LongHashPartition p = this.partitionsBeingBuilt.get(i);
 			try {
-				p.clearAllMemory(this.internalPool);
+				p.clearAllMemory(this.availableMemory);
 			} catch (Exception e) {
 				LOG.error("Error during partition cleanup.", e);
 			}
@@ -526,7 +524,7 @@ public abstract class LongHybridHashTable extends BaseHybridHashTable {
 
 		// clear the partitions that are still to be done (that have files on disk)
 		for (final LongHashPartition p : this.partitionsPending) {
-			p.clearAllMemory(this.internalPool);
+			p.clearAllMemory(this.availableMemory);
 		}
 	}
 

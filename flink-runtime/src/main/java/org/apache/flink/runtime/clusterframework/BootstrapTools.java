@@ -288,10 +288,11 @@ public class BootstrapTools {
 	public static void writeConfiguration(Configuration cfg, File file) throws IOException {
 		try (FileWriter fwrt = new FileWriter(file);
 			PrintWriter out = new PrintWriter(fwrt)) {
-			for (Map.Entry<String, String> entry : cfg.toMap().entrySet()) {
-				out.print(entry.getKey());
+			for (String key : cfg.keySet()) {
+				String value = cfg.getString(key, null);
+				out.print(key);
 				out.print(": ");
-				out.println(entry.getValue());
+				out.println(value);
 			}
 		}
 	}
@@ -400,8 +401,8 @@ public class BootstrapTools {
 		final Map<String, String> startCommandValues = new HashMap<>();
 		startCommandValues.put("java", "$JAVA_HOME/bin/java");
 
-		final TaskExecutorProcessSpec taskExecutorProcessSpec = tmParams.getTaskExecutorProcessSpec();
-		startCommandValues.put("jvmmem", TaskExecutorProcessUtils.generateJvmParametersStr(taskExecutorProcessSpec));
+		final TaskExecutorResourceSpec taskExecutorResourceSpec = tmParams.getTaskExecutorResourceSpec();
+		startCommandValues.put("jvmmem", TaskExecutorResourceUtils.generateJvmParametersStr(taskExecutorResourceSpec));
 
 		String javaOpts = flinkConfig.getString(CoreOptions.FLINK_JVM_OPTIONS);
 		if (flinkConfig.getString(CoreOptions.FLINK_TM_JVM_OPTIONS).length() > 0) {
@@ -425,8 +426,6 @@ public class BootstrapTools {
 			if (hasLog4j) {
 				logging += " -Dlog4j.configuration=file:" + configDirectory +
 					"/log4j.properties";
-				logging += " -Dlog4j.configurationFile=file:" + configDirectory +
-					"/log4j.properties";
 			}
 		}
 
@@ -436,7 +435,7 @@ public class BootstrapTools {
 			"1> " + logDirectory + "/taskmanager.out " +
 			"2> " + logDirectory + "/taskmanager.err");
 
-		String argsStr = TaskExecutorProcessUtils.generateDynamicConfigsStr(taskExecutorProcessSpec) + " --configDir " + configDirectory;
+		String argsStr = TaskExecutorResourceUtils.generateDynamicConfigsStr(taskExecutorResourceSpec) + " --configDir " + configDirectory;
 		if (!mainArgs.isEmpty()) {
 			argsStr += " " + mainArgs;
 		}

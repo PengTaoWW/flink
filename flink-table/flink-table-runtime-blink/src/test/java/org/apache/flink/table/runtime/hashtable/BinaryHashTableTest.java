@@ -670,16 +670,13 @@ public class BinaryHashTableTest {
 		// while hash table only assign 250 bucket on it. The unused buffer bytes may contains arbitrary data, which may
 		// influence hash table if forget to skip it. To mock this, put the invalid bucket data(partition=1, inMemory=true, count=-1)
 		// at the end of buffer.
-		int totalPages = table.getInternalPool().freePages();
-		for (int i = 0; i < totalPages; i++) {
-			MemorySegment segment = table.getInternalPool().nextSegment();
+		for (MemorySegment segment : table.getFreedMemory()) {
 			int newBucketOffset = segment.size() - 128;
 			// initialize the header fields
 			segment.put(newBucketOffset, (byte) 0);
 			segment.put(newBucketOffset + 1, (byte) 0);
 			segment.putShort(newBucketOffset + 2, (short) -1);
 			segment.putLong(newBucketOffset + 4, ~0x0L);
-			table.returnPage(segment);
 		}
 
 		int numRecordsInJoinResult = join(table, buildInput, probeInput);
@@ -864,7 +861,7 @@ public class BinaryHashTableTest {
 		}
 		area.freeMemory();
 		table.close();
-		Assert.assertEquals(35, table.getInternalPool().freePages());
+		Assert.assertEquals(35, table.getFreedMemory().size());
 	}
 
 	// ============================================================================================

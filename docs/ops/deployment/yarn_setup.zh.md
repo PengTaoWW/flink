@@ -1,5 +1,5 @@
 ---
-title:  "YARN 设置"
+title:  "YARN Setup"
 nav-title: YARN
 nav-parent_id: deployment
 nav-pos: 4
@@ -141,11 +141,9 @@ If you do not want to keep the Flink YARN client running all the time, it's also
 The parameter for that is called `-d` or `--detached`.
 
 In that case, the Flink YARN client will only submit Flink to the cluster and then close itself.
+Note that in this case its not possible to stop the YARN session using Flink.
 
-In order to stop the Flink cluster gracefully use the following command: `echo "stop" | ./bin/yarn-session.sh -id <appId>`.
-
-If this should not be possible, then you can also kill Flink via YARN's web interface or via its utilities: `yarn application -kill <appId>`.
-Note, however, that killing Flink might not clean up all job artifacts and temporary files.
+Use the YARN utilities (`yarn application -kill <appId>`) to stop the YARN session.
 
 #### Attach to an existing Session
 

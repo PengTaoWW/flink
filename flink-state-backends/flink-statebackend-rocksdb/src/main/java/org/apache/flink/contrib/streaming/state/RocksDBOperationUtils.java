@@ -24,7 +24,6 @@ import org.apache.flink.runtime.memory.OpaqueMemoryResource;
 import org.apache.flink.runtime.state.RegisteredStateMetaInfoBase;
 import org.apache.flink.util.FlinkRuntimeException;
 import org.apache.flink.util.IOUtils;
-import org.apache.flink.util.OperatingSystem;
 import org.apache.flink.util.Preconditions;
 import org.apache.flink.util.function.LongFunctionWithException;
 
@@ -81,10 +80,6 @@ public class RocksDBOperationUtils {
 		} catch (RocksDBException e) {
 			IOUtils.closeQuietly(columnFamilyOptions);
 			columnFamilyDescriptors.forEach((cfd) -> IOUtils.closeQuietly(cfd.getOptions()));
-
-			// improve error reporting on Windows
-			throwExceptionIfPathLengthExceededOnWindows(path, e);
-
 			throw new IOException("Error while opening RocksDB instance.", e);
 		}
 
@@ -210,18 +205,6 @@ public class RocksDBOperationUtils {
 		}
 		catch (Exception e) {
 			throw new IOException("Failed to acquire shared cache resource for RocksDB", e);
-		}
-	}
-
-	private static void throwExceptionIfPathLengthExceededOnWindows(String path, Exception cause) throws IOException {
-		// max directory path length on Windows is 247.
-		// the maximum path length is 260, subtracting one file name length (12 chars) and one NULL terminator.
-		final int maxWinDirPathLen = 247;
-
-		if (path.length() > maxWinDirPathLen && OperatingSystem.isWindows()) {
-			throw new IOException(String.format(
-				"The directory path length (%d) is longer than the directory path length limit for Windows (%d): %s",
-				path.length(), maxWinDirPathLen, path), cause);
 		}
 	}
 }

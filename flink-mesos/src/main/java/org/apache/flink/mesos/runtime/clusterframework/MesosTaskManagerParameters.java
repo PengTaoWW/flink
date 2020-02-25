@@ -25,8 +25,8 @@ import org.apache.flink.configuration.MemorySize;
 import org.apache.flink.configuration.TaskManagerOptions;
 import org.apache.flink.configuration.description.Description;
 import org.apache.flink.runtime.clusterframework.ContaineredTaskManagerParameters;
-import org.apache.flink.runtime.clusterframework.TaskExecutorProcessSpec;
-import org.apache.flink.runtime.clusterframework.TaskExecutorProcessUtils;
+import org.apache.flink.runtime.clusterframework.TaskExecutorResourceSpec;
+import org.apache.flink.runtime.clusterframework.TaskExecutorResourceUtils;
 import org.apache.flink.util.Preconditions;
 
 import com.netflix.fenzo.ConstraintEvaluator;
@@ -75,7 +75,6 @@ public class MesosTaskManagerParameters {
 
 	public static final ConfigOption<Double> MESOS_RM_TASKS_CPUS =
 		key("mesos.resourcemanager.tasks.cpus")
-		.doubleType()
 		.defaultValue(0.0)
 		.withDescription("CPUs to assign to the Mesos workers.");
 
@@ -216,7 +215,7 @@ public class MesosTaskManagerParameters {
 	 * Get the CPU units to use for the TaskManager process.
 	 */
 	public double cpus() {
-		return containeredParameters.getTaskExecutorProcessSpec().getCpuCores().getValue().doubleValue();
+		return containeredParameters.getTaskExecutorResourceSpec().getCpuCores().getValue().doubleValue();
 	}
 
 	/**
@@ -412,24 +411,25 @@ public class MesosTaskManagerParameters {
 	private static ContaineredTaskManagerParameters createContaineredTaskManagerParameters(final Configuration flinkConfig) {
 		double cpus = getCpuCores(flinkConfig);
 		MemorySize totalProcessMemory = getTotalProcessMemory(flinkConfig);
-		TaskExecutorProcessSpec taskExecutorProcessSpec = TaskExecutorProcessUtils
-			.newProcessSpecBuilder(flinkConfig)
+		TaskExecutorResourceSpec taskExecutorResourceSpec = TaskExecutorResourceUtils
+			.newResourceSpecBuilder(flinkConfig)
 			.withCpuCores(cpus)
 			.withTotalProcessMemory(totalProcessMemory)
 			.build();
 
 		return ContaineredTaskManagerParameters.create(
 			flinkConfig,
-			taskExecutorProcessSpec,
+			taskExecutorResourceSpec,
 			flinkConfig.getInteger(MESOS_RM_TASKS_SLOTS));
 	}
 
 	private static double getCpuCores(final Configuration configuration) {
-		return TaskExecutorProcessUtils.getCpuCoresWithFallbackConfigOption(configuration, MESOS_RM_TASKS_CPUS);
+		double fallback = configuration.getDouble(MESOS_RM_TASKS_CPUS);
+		return TaskExecutorResourceUtils.getCpuCoresWithFallback(configuration, fallback).getValue().doubleValue();
 	}
 
 	private static MemorySize getTotalProcessMemory(final Configuration configuration) {
-		MemorySize legacyTotalProcessMemory = MemorySize.ofMebiBytes(configuration.getInteger(MESOS_RM_TASKS_MEMORY_MB));
+		MemorySize legacyTotalProcessMemory = MemorySize.parse(configuration.getInteger(MESOS_RM_TASKS_MEMORY_MB) + "m");
 		MemorySize unifiedTotalProcessMemory = configuration.get(TaskManagerOptions.TOTAL_PROCESS_MEMORY);
 
 		if (configuration.contains(MESOS_RM_TASKS_MEMORY_MB) &&

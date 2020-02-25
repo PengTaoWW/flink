@@ -130,6 +130,11 @@ public class HiveTableInputFormat extends HadoopInputFormatCommonBase<BaseRow, H
 			return false;
 		}
 
+		if (hiveVersion.startsWith("1.")) {
+			LOG.info("Fallback to hadoop mapred reader, unsupported hive version: " + hiveVersion);
+			return false;
+		}
+
 		for (int i : selectedFields) {
 			switch (fieldTypes[i].getLogicalType().getTypeRoot()) {
 				case CHAR:

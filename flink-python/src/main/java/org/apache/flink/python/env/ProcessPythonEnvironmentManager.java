@@ -33,11 +33,12 @@ import org.codehaus.commons.nullanalysis.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.annotation.Nullable;
+
 import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.nio.charset.Charset;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -99,13 +100,16 @@ public final class ProcessPythonEnvironmentManager implements PythonEnvironmentM
 	@NotNull private final PythonDependencyInfo dependencyInfo;
 	@NotNull private final Map<String, String> systemEnv;
 	@NotNull private final String[] tmpDirectories;
+	@Nullable private final String logDirectory;
 
 	public ProcessPythonEnvironmentManager(
 		@NotNull PythonDependencyInfo dependencyInfo,
 		@NotNull String[] tmpDirectories,
+		@Nullable String logDirectory,
 		@NotNull Map<String, String> systemEnv) {
 		this.dependencyInfo = Objects.requireNonNull(dependencyInfo);
 		this.tmpDirectories = Objects.requireNonNull(tmpDirectories);
+		this.logDirectory = logDirectory;
 		this.systemEnv = Objects.requireNonNull(systemEnv);
 	}
 
@@ -189,8 +193,10 @@ public final class ProcessPythonEnvironmentManager implements PythonEnvironmentM
 
 		constructRequirementsDirectory(env);
 
-		// set BOOT_LOG_DIR.
-		env.put("BOOT_LOG_DIR", baseDirectory);
+		// set FLINK_LOG_DIR if the log directory exists
+		if (!Strings.isNullOrEmpty(logDirectory)) {
+			env.put("FLINK_LOG_DIR", logDirectory);
+		}
 
 		// set the path of python interpreter, it will be used to execute the udf worker.
 		if (dependencyInfo.getPythonExec().isPresent()) {
@@ -297,17 +303,6 @@ public final class ProcessPythonEnvironmentManager implements PythonEnvironmentM
 	@VisibleForTesting
 	String getBaseDirectory() {
 		return baseDirectory;
-	}
-
-	@Override
-	public String getBootLog() throws Exception {
-		File bootLogFile = new File(baseDirectory + File.separator + "flink-python-udf-boot.log");
-		String msg = "Failed to create stage bundle factory!";
-		if (bootLogFile.exists()) {
-			byte[] output = Files.readAllBytes(bootLogFile.toPath());
-			msg += String.format(" %s", new String(output, Charset.defaultCharset()));
-		}
-		return msg;
 	}
 
 	private static void appendToPythonPath(Map<String, String> env, List<String> pythonDependencies) {

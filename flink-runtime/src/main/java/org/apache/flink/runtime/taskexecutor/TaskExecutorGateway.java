@@ -31,18 +31,15 @@ import org.apache.flink.runtime.deployment.TaskDeploymentDescriptor;
 import org.apache.flink.runtime.executiongraph.ExecutionAttemptID;
 import org.apache.flink.runtime.executiongraph.PartitionInfo;
 import org.apache.flink.runtime.io.network.partition.ResultPartitionID;
-import org.apache.flink.runtime.jobgraph.OperatorID;
 import org.apache.flink.runtime.jobmaster.AllocatedSlotReport;
 import org.apache.flink.runtime.jobmaster.JobMasterId;
 import org.apache.flink.runtime.messages.Acknowledge;
 import org.apache.flink.runtime.messages.TaskBackPressureResponse;
-import org.apache.flink.runtime.operators.coordination.OperatorEvent;
 import org.apache.flink.runtime.resourcemanager.ResourceManagerId;
 import org.apache.flink.runtime.rpc.RpcGateway;
 import org.apache.flink.runtime.rpc.RpcTimeout;
 import org.apache.flink.runtime.taskmanager.Task;
 import org.apache.flink.types.SerializableOptional;
-import org.apache.flink.util.SerializedValue;
 
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -50,7 +47,7 @@ import java.util.concurrent.CompletableFuture;
 /**
  * {@link TaskExecutor} RPC gateway interface.
  */
-public interface TaskExecutorGateway extends RpcGateway, TaskExecutorOperatorEventGateway {
+public interface TaskExecutorGateway extends RpcGateway {
 
 	/**
 	 * Requests a slot from the TaskManager.
@@ -215,10 +212,4 @@ public interface TaskExecutorGateway extends RpcGateway, TaskExecutorOperatorEve
 	 * @return Future flag indicating whether the task executor can be released.
 	 */
 	CompletableFuture<Boolean> canBeReleased();
-
-	@Override
-	CompletableFuture<Acknowledge> sendOperatorEventToTask(
-			ExecutionAttemptID task,
-			OperatorID operator,
-			SerializedValue<OperatorEvent> evt);
 }

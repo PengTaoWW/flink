@@ -18,7 +18,7 @@
 package org.apache.flink.table.planner.functions.inference;
 
 import org.apache.flink.annotation.Internal;
-import org.apache.flink.table.catalog.DataTypeFactory;
+import org.apache.flink.table.catalog.DataTypeLookup;
 import org.apache.flink.table.expressions.ValueLiteralExpression;
 import org.apache.flink.table.functions.FunctionDefinition;
 import org.apache.flink.table.types.inference.CallContext;
@@ -38,24 +38,24 @@ import java.time.Period;
 @Internal
 public abstract class AbstractSqlCallContext implements CallContext {
 
-	private final DataTypeFactory dataTypeFactory;
+	private final DataTypeLookup lookup;
 
 	private final FunctionDefinition definition;
 
 	private final String name;
 
 	protected AbstractSqlCallContext(
-			DataTypeFactory dataTypeFactory,
+			DataTypeLookup lookup,
 			FunctionDefinition definition,
 			String name) {
-		this.dataTypeFactory = dataTypeFactory;
+		this.lookup = lookup;
 		this.definition = definition;
 		this.name = name;
 	}
 
 	@Override
-	public DataTypeFactory getDataTypeFactory() {
-		return dataTypeFactory;
+	public DataTypeLookup getDataTypeLookup() {
+		return lookup;
 	}
 
 	@Override

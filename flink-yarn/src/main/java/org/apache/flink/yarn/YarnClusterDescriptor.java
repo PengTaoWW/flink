@@ -43,7 +43,6 @@ import org.apache.flink.runtime.clusterframework.BootstrapTools;
 import org.apache.flink.runtime.entrypoint.ClusterEntrypoint;
 import org.apache.flink.runtime.jobgraph.JobGraph;
 import org.apache.flink.runtime.jobmanager.HighAvailabilityMode;
-import org.apache.flink.runtime.util.HadoopUtils;
 import org.apache.flink.util.FlinkException;
 import org.apache.flink.util.Preconditions;
 import org.apache.flink.util.ShutdownHookUtil;
@@ -56,7 +55,6 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.permission.FsAction;
 import org.apache.hadoop.fs.permission.FsPermission;
-import org.apache.hadoop.hdfs.DFSConfigKeys;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.yarn.api.ApplicationConstants;
 import org.apache.hadoop.yarn.api.protocolrecords.GetNewApplicationResponse;
@@ -252,7 +250,7 @@ public class YarnClusterDescriptor implements ClusterDescriptor<ApplicationId> {
 	 * Adds the given files to the list of files to ship.
 	 *
 	 * <p>Note that any file matching "<tt>flink-dist*.jar</tt>" will be excluded from the upload by
-	 * {@link #uploadAndRegisterFiles(Collection, FileSystem, Path, ApplicationId, List, Map, String, StringBuilder, int)}
+	 * {@link #uploadAndRegisterFiles(Collection, FileSystem, Path, ApplicationId, List, Map, String, StringBuilder)}
 	 * since we upload the Flink uber jar ourselves and do not need to deploy it multiple times.
 	 *
 	 * @param shipFiles files to ship
@@ -434,11 +432,12 @@ public class YarnClusterDescriptor implements ClusterDescriptor<ApplicationId> {
 			// so we check only in ticket cache scenario.
 			boolean useTicketCache = flinkConfiguration.getBoolean(SecurityOptions.KERBEROS_LOGIN_USETICKETCACHE);
 
-			boolean isCredentialsConfigured = HadoopUtils.isCredentialsConfigured(
-				UserGroupInformation.getCurrentUser(), useTicketCache);
-			if (!isCredentialsConfigured) {
+			UserGroupInformation loginUser = UserGroupInformation.getCurrentUser();
+			if (loginUser.getAuthenticationMethod() == UserGroupInformation.AuthenticationMethod.KERBEROS
+					&& useTicketCache && !loginUser.hasKerberosCredentials()) {
+				LOG.error("Hadoop security with Kerberos is enabled but the login user does not have Kerberos credentials");
 				throw new RuntimeException("Hadoop security with Kerberos is enabled but the login user " +
-					"does not have Kerberos credentials or delegation tokens!");
+						"does not have Kerberos credentials");
 			}
 		}
 
@@ -497,8 +496,10 @@ public class YarnClusterDescriptor implements ClusterDescriptor<ApplicationId> {
 
 		// print the application id for user to cancel themselves.
 		if (detached) {
-			final ApplicationId yarnApplicationId = report.getApplicationId();
-			logDetachedClusterInformation(yarnApplicationId, LOG);
+			LOG.info("The Flink YARN client has been started in detached mode. In order to stop " +
+				"Flink on YARN, use the following command or a YARN web interface to stop " +
+				"it:\nyarn application -kill " + report.getApplicationId() + "\nPlease also note that the " +
+				"temporary files of the YARN session in the home directory will not be removed.");
 		}
 
 		setClusterEntrypointInfoToConfig(report);
@@ -681,10 +682,6 @@ public class YarnClusterDescriptor implements ClusterDescriptor<ApplicationId> {
 				// add user code jars from the provided JobGraph
 				: jobGraph.getUserJars().stream().map(f -> f.toUri()).map(File::new).collect(Collectors.toSet());
 
-		int yarnFileReplication = yarnConfiguration.getInt(DFSConfigKeys.DFS_REPLICATION_KEY, DFSConfigKeys.DFS_REPLICATION_DEFAULT);
-		int fileReplication = flinkConfiguration.getInteger(YarnConfigOptions.FILE_REPLICATION);
-		fileReplication = fileReplication > 0 ? fileReplication : yarnFileReplication;
-
 		// only for per job mode
 		if (jobGraph != null) {
 			for (Map.Entry<String, DistributedCache.DistributedCacheEntry> entry : jobGraph.getUserArtifacts().entrySet()) {
@@ -693,7 +690,7 @@ public class YarnClusterDescriptor implements ClusterDescriptor<ApplicationId> {
 				if (!path.getFileSystem().isDistributedFS()) {
 					Path localPath = new Path(path.getPath());
 					Tuple2<Path, Long> remoteFileInfo =
-						Utils.uploadLocalFileToRemote(fs, appId.toString(), localPath, homeDir, entry.getKey(), fileReplication);
+						Utils.uploadLocalFileToRemote(fs, appId.toString(), localPath, homeDir, entry.getKey());
 					jobGraph.setUserArtifactRemotePath(entry.getKey(), remoteFileInfo.f0.toString());
 				}
 			}
@@ -717,8 +714,7 @@ public class YarnClusterDescriptor implements ClusterDescriptor<ApplicationId> {
 			paths,
 			localResources,
 			Path.CUR_DIR,
-			envShipFileList,
-			fileReplication);
+			envShipFileList);
 
 		// upload and register ship-only files
 		uploadAndRegisterFiles(
@@ -729,8 +725,7 @@ public class YarnClusterDescriptor implements ClusterDescriptor<ApplicationId> {
 			paths,
 			localResources,
 			Path.CUR_DIR,
-			envShipFileList,
-			fileReplication);
+			envShipFileList);
 
 		final List<String> userClassPaths = uploadAndRegisterFiles(
 			userJarFiles,
@@ -741,8 +736,7 @@ public class YarnClusterDescriptor implements ClusterDescriptor<ApplicationId> {
 			localResources,
 			userJarInclusion == YarnConfigOptions.UserJarInclusion.DISABLED ?
 				ConfigConstants.DEFAULT_FLINK_USR_LIB_DIR : Path.CUR_DIR,
-			envShipFileList,
-			fileReplication);
+			envShipFileList);
 
 		if (userJarInclusion == YarnConfigOptions.UserJarInclusion.ORDER) {
 			systemClassPaths.addAll(userClassPaths);
@@ -771,8 +765,7 @@ public class YarnClusterDescriptor implements ClusterDescriptor<ApplicationId> {
 				flinkJarPath,
 				localResources,
 				homeDir,
-				"",
-				fileReplication);
+				"");
 
 		paths.add(remotePathJar);
 		classPathBuilder.append(flinkJarPath.getName()).append(File.pathSeparator);
@@ -792,8 +785,7 @@ public class YarnClusterDescriptor implements ClusterDescriptor<ApplicationId> {
 				new Path(tmpConfigurationFile.getAbsolutePath()),
 				localResources,
 				homeDir,
-				"",
-				fileReplication);
+				"");
 			envShipFileList.append(flinkConfigKey).append("=").append(remotePathConf).append(",");
 			paths.add(remotePathConf);
 			classPathBuilder.append("flink-conf.yaml").append(File.pathSeparator);
@@ -830,8 +822,7 @@ public class YarnClusterDescriptor implements ClusterDescriptor<ApplicationId> {
 						new Path(tmpJobGraphFile.toURI()),
 						localResources,
 						homeDir,
-						"",
-						fileReplication);
+						"");
 				paths.add(pathFromYarnURL);
 				classPathBuilder.append(jobGraphFilename).append(File.pathSeparator);
 			} catch (Exception e) {
@@ -866,8 +857,7 @@ public class YarnClusterDescriptor implements ClusterDescriptor<ApplicationId> {
 					yarnSitePath,
 					localResources,
 					homeDir,
-					"",
-					fileReplication);
+					"");
 
 			String krb5Config = System.getProperty("java.security.krb5.conf");
 			if (krb5Config != null && krb5Config.length() != 0) {
@@ -881,8 +871,7 @@ public class YarnClusterDescriptor implements ClusterDescriptor<ApplicationId> {
 						krb5ConfPath,
 						localResources,
 						homeDir,
-						"",
-						fileReplication);
+						"");
 				hasKrb5 = true;
 			}
 		}
@@ -899,8 +888,7 @@ public class YarnClusterDescriptor implements ClusterDescriptor<ApplicationId> {
 					new Path(keytab),
 					localResources,
 					homeDir,
-					"",
-					fileReplication);
+					"");
 		}
 
 		final boolean hasLogback = logConfigFilePath != null && logConfigFilePath.endsWith(CONFIG_FILE_LOGBACK_NAME);
@@ -1062,8 +1050,6 @@ public class YarnClusterDescriptor implements ClusterDescriptor<ApplicationId> {
 	 * 		local path to the file
 	 * @param localResources
 	 * 		map of resources
-     * @param replication
-	 * 	    number of replications of a remote file to be created
 	 *
 	 * @return the remote path to the uploaded resource
 	 */
@@ -1074,15 +1060,13 @@ public class YarnClusterDescriptor implements ClusterDescriptor<ApplicationId> {
 			Path localSrcPath,
 			Map<String, LocalResource> localResources,
 			Path targetHomeDir,
-			String relativeTargetPath,
-			int replication) throws IOException {
+			String relativeTargetPath) throws IOException {
 		Tuple2<Path, LocalResource> resource = Utils.setupLocalResource(
 				fs,
 				appId.toString(),
 				localSrcPath,
 				targetHomeDir,
-				relativeTargetPath,
-				replication);
+				relativeTargetPath);
 
 		localResources.put(key, resource.f1);
 
@@ -1119,8 +1103,6 @@ public class YarnClusterDescriptor implements ClusterDescriptor<ApplicationId> {
 	 *		the directory the localResources are uploaded to
 	 * @param envShipFileList
 	 * 		list of shipped files in a format understood by {@link Utils#createTaskExecutorContext}
-	 * @param replication
-	 * 	     number of replications of a remote file to be created
 	 *
 	 * @return list of class paths with the the proper resource keys from the registration
 	 */
@@ -1132,10 +1114,7 @@ public class YarnClusterDescriptor implements ClusterDescriptor<ApplicationId> {
 			List<Path> remotePaths,
 			Map<String, LocalResource> localResources,
 			String localResourcesDirectory,
-			StringBuilder envShipFileList,
-			int replication) throws IOException {
-
-		checkArgument(replication >= 1);
+			StringBuilder envShipFileList) throws IOException {
 		final List<Path> localPaths = new ArrayList<>();
 		final List<Path> relativePaths = new ArrayList<>();
 		for (File shipFile : shipFiles) {
@@ -1171,8 +1150,7 @@ public class YarnClusterDescriptor implements ClusterDescriptor<ApplicationId> {
 						localPath,
 						localResources,
 						targetHomeDir,
-						relativePath.getParent().toString(),
-						replication);
+						relativePath.getParent().toString());
 				remotePaths.add(remotePath);
 				envShipFileList.append(key).append("=").append(remotePath).append(",");
 				// add files to the classpath
@@ -1581,7 +1559,6 @@ public class YarnClusterDescriptor implements ClusterDescriptor<ApplicationId> {
 
 			if (hasLog4j) {
 				logging += " -Dlog4j.configuration=file:" + CONFIG_FILE_LOG4J_NAME;
-				logging += " -Dlog4j.configurationFile=file:" + CONFIG_FILE_LOG4J_NAME;
 			}
 		}
 
@@ -1632,17 +1609,6 @@ public class YarnClusterDescriptor implements ClusterDescriptor<ApplicationId> {
 		flinkConfiguration.setInteger(RestOptions.PORT, port);
 
 		flinkConfiguration.set(YarnConfigOptions.APPLICATION_ID, ConverterUtils.toString(clusterId));
-	}
-
-	public static void logDetachedClusterInformation(ApplicationId yarnApplicationId, Logger logger) {
-		logger.info(
-			"The Flink YARN session cluster has been started in detached mode. In order to " +
-				"stop Flink gracefully, use the following command:\n" +
-				"$ echo \"stop\" | ./bin/yarn-session.sh -id {}\n" +
-				"If this should not be possible, then you can also kill Flink via YARN's web interface or via:\n" +
-				"$ yarn application -kill {}\n" +
-				"Note that killing Flink might not clean up all job artifacts and temporary files.",
-			yarnApplicationId, yarnApplicationId);
 	}
 }
 

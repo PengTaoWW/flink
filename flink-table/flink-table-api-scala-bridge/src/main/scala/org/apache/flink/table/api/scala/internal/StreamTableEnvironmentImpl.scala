@@ -40,6 +40,7 @@ import org.apache.flink.table.operations.{OutputConversionModifyOperation, Query
 import org.apache.flink.table.sources.{TableSource, TableSourceValidation}
 import org.apache.flink.table.types.utils.TypeConversions
 import org.apache.flink.table.typeutils.FieldInfoUtils
+
 import java.util
 import java.util.{Collections, List => JList, Map => JMap}
 
@@ -68,6 +69,11 @@ class StreamTableEnvironmentImpl (
     planner,
     isStreaming)
   with org.apache.flink.table.api.scala.StreamTableEnvironment {
+
+  if (!isStreaming) {
+    throw new TableException(
+      "StreamTableEnvironment is not supported on batch mode now, please use TableEnvironment.")
+  }
 
   override def fromDataStream[T](dataStream: DataStream[T]): Table = {
     val queryOperation = asQueryOperation(dataStream, None)
@@ -304,27 +310,11 @@ object StreamTableEnvironmentImpl {
       tableConfig: TableConfig)
     : StreamTableEnvironmentImpl = {
 
-    if (!settings.isStreamingMode) {
-      throw new TableException(
-        "StreamTableEnvironment can not run in batch mode for now, please use TableEnvironment.")
-    }
-
-    // temporary solution until FLINK-15635 is fixed
-    val classLoader = Thread.currentThread.getContextClassLoader
+    val catalogManager = new CatalogManager(
+      settings.getBuiltInCatalogName,
+      new GenericInMemoryCatalog(settings.getBuiltInCatalogName, settings.getBuiltInDatabaseName))
 
     val moduleManager = new ModuleManager
-
-    val catalogManager = CatalogManager.newBuilder
-      .classLoader(classLoader)
-      .config(tableConfig.getConfiguration)
-      .defaultCatalog(
-        settings.getBuiltInCatalogName,
-        new GenericInMemoryCatalog(
-          settings.getBuiltInCatalogName,
-          settings.getBuiltInDatabaseName))
-      .executionConfig(executionEnvironment.getConfig)
-      .build
-
     val functionCatalog = new FunctionCatalog(tableConfig, catalogManager, moduleManager)
 
     val executorProperties = settings.toExecutorProperties

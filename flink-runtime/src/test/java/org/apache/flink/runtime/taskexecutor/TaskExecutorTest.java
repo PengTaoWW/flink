@@ -31,6 +31,8 @@ import org.apache.flink.core.testutils.OneShotLatch;
 import org.apache.flink.runtime.blob.BlobCacheService;
 import org.apache.flink.runtime.blob.TransientBlobKey;
 import org.apache.flink.runtime.blob.VoidBlobStore;
+import org.apache.flink.runtime.clusterframework.TaskExecutorResourceSpec;
+import org.apache.flink.runtime.clusterframework.TaskExecutorResourceUtils;
 import org.apache.flink.runtime.clusterframework.types.AllocationID;
 import org.apache.flink.runtime.clusterframework.types.ResourceID;
 import org.apache.flink.runtime.clusterframework.types.ResourceProfile;
@@ -41,6 +43,8 @@ import org.apache.flink.runtime.concurrent.ScheduledExecutor;
 import org.apache.flink.runtime.deployment.TaskDeploymentDescriptor;
 import org.apache.flink.runtime.deployment.TaskDeploymentDescriptorBuilder;
 import org.apache.flink.runtime.entrypoint.ClusterInformation;
+import org.apache.flink.runtime.execution.Environment;
+import org.apache.flink.runtime.execution.librarycache.ContextClassLoaderLibraryCacheManager;
 import org.apache.flink.runtime.heartbeat.HeartbeatListener;
 import org.apache.flink.runtime.heartbeat.HeartbeatManager;
 import org.apache.flink.runtime.heartbeat.HeartbeatManagerImpl;
@@ -53,6 +57,7 @@ import org.apache.flink.runtime.io.disk.iomanager.IOManager;
 import org.apache.flink.runtime.io.disk.iomanager.IOManagerAsync;
 import org.apache.flink.runtime.io.network.NettyShuffleEnvironment;
 import org.apache.flink.runtime.io.network.NettyShuffleEnvironmentBuilder;
+import org.apache.flink.runtime.io.network.partition.NoOpResultPartitionConsumableNotifier;
 import org.apache.flink.runtime.io.network.partition.ResultPartitionID;
 import org.apache.flink.runtime.io.network.partition.TaskExecutorPartitionTracker;
 import org.apache.flink.runtime.io.network.partition.TaskExecutorPartitionTrackerImpl;
@@ -62,6 +67,7 @@ import org.apache.flink.runtime.jobmaster.AllocatedSlotInfo;
 import org.apache.flink.runtime.jobmaster.AllocatedSlotReport;
 import org.apache.flink.runtime.jobmaster.JMTMRegistrationSuccess;
 import org.apache.flink.runtime.jobmaster.JobMasterGateway;
+import org.apache.flink.runtime.jobmaster.JobMasterId;
 import org.apache.flink.runtime.jobmaster.utils.TestingJobMasterGateway;
 import org.apache.flink.runtime.jobmaster.utils.TestingJobMasterGatewayBuilder;
 import org.apache.flink.runtime.leaderretrieval.LeaderRetrievalListener;
@@ -92,12 +98,13 @@ import org.apache.flink.runtime.taskexecutor.partition.ClusterPartitionReport;
 import org.apache.flink.runtime.taskexecutor.slot.SlotNotFoundException;
 import org.apache.flink.runtime.taskexecutor.slot.SlotOffer;
 import org.apache.flink.runtime.taskexecutor.slot.TaskSlotTable;
-import org.apache.flink.runtime.taskexecutor.slot.TaskSlotTableImpl;
 import org.apache.flink.runtime.taskexecutor.slot.TaskSlotUtils;
-import org.apache.flink.runtime.taskexecutor.slot.TestingTaskSlotTable;
 import org.apache.flink.runtime.taskmanager.LocalTaskManagerLocation;
-import org.apache.flink.runtime.taskmanager.Task;
+import org.apache.flink.runtime.taskmanager.NoOpTaskManagerActions;
+import org.apache.flink.runtime.taskmanager.TaskExecutionState;
+import org.apache.flink.runtime.taskmanager.TaskManagerActions;
 import org.apache.flink.runtime.taskmanager.TaskManagerLocation;
+import org.apache.flink.runtime.taskmanager.TestCheckpointResponder;
 import org.apache.flink.runtime.testtasks.NoOpInvokable;
 import org.apache.flink.runtime.util.TestingFatalErrorHandler;
 import org.apache.flink.util.ExceptionUtils;
@@ -183,7 +190,11 @@ public class TaskExecutorTest extends TestLogger {
 		MemorySize.parse("1m"),
 		MemorySize.parse("2m"),
 		MemorySize.parse("3m"),
-		MemorySize.parse("4m"));
+		MemorySize.parse("4m"),
+		MemorySize.parse("5m"),
+		MemorySize.parse("6m"),
+		MemorySize.parse("7m"),
+		MemorySize.parse("8m"));
 
 	@Rule
 	public final TemporaryFolder tmp = new TemporaryFolder();
@@ -270,7 +281,7 @@ public class TaskExecutorTest extends TestLogger {
 
 	@Test
 	public void testShouldShutDownTaskManagerServicesInPostStop() throws Exception {
-		final TaskSlotTableImpl<Task> taskSlotTable = TaskSlotUtils.createTaskSlotTable(1);
+		final TaskSlotTable taskSlotTable = TaskSlotUtils.createTaskSlotTable(1);
 
 		final JobLeaderService jobLeaderService = new JobLeaderService(taskManagerLocation, RetryingRegistrationConfiguration.defaultConfiguration());
 
@@ -304,7 +315,7 @@ public class TaskExecutorTest extends TestLogger {
 			RpcUtils.terminateRpcEndpoint(taskManager, timeout);
 		}
 
-		assertThat(taskSlotTable.isClosed(), is(true));
+		assertThat(taskSlotTable.isStopped(), is(true));
 		assertThat(nettyShuffleEnvironment.isClosed(), is(true));
 		assertThat(kvStateService.isShutdown(), is(true));
 	}
@@ -417,11 +428,9 @@ public class TaskExecutorTest extends TestLogger {
 
 		rpc.registerGateway(rmAddress, rmGateway);
 
-		final TaskSlotTable<Task> taskSlotTable = TestingTaskSlotTable
-			.<Task>newBuilder()
-			.createSlotReportSupplier(SlotReport::new)
-			.closeAsyncReturns(CompletableFuture.completedFuture(null))
-			.build();
+		final TaskSlotTable taskSlotTable = mock(TaskSlotTable.class);
+		final SlotReport slotReport = new SlotReport();
+		when(taskSlotTable.createSlotReport(any(ResourceID.class))).thenReturn(slotReport);
 
 		HeartbeatServices heartbeatServices = new HeartbeatServices(heartbeatInterval, heartbeatTimeout);
 
@@ -502,12 +511,7 @@ public class TaskExecutorTest extends TestLogger {
 				new JobID(),
 				new AllocationID()));
 
-		final Queue<SlotReport> reports = new ArrayDeque<>(Arrays.asList(slotReport1, slotReport2));
-		final TaskSlotTable<Task> taskSlotTable = TestingTaskSlotTable
-			.<Task>newBuilder()
-			.createSlotReportSupplier(reports::poll)
-			.closeAsyncReturns(CompletableFuture.completedFuture(null))
-			.build();
+		final TestingTaskSlotTable taskSlotTable = new TestingTaskSlotTable(new ArrayDeque<>(Arrays.asList(slotReport1, slotReport2)));
 
 		final TaskExecutorLocalStateStoresManager localStateStoresManager = createTaskExecutorLocalStateStoresManager();
 
@@ -627,11 +631,9 @@ public class TaskExecutorTest extends TestLogger {
 		rpc.registerGateway(address1, rmGateway1);
 		rpc.registerGateway(address2, rmGateway2);
 
-		final TaskSlotTable<Task> taskSlotTable = TestingTaskSlotTable
-			.<Task>newBuilder()
-			.createSlotReportSupplier(SlotReport::new)
-			.closeAsyncReturns(CompletableFuture.completedFuture(null))
-			.build();
+		final TaskSlotTable taskSlotTable = mock(TaskSlotTable.class);
+		final SlotReport slotReport = new SlotReport();
+		when(taskSlotTable.createSlotReport(any(ResourceID.class))).thenReturn(slotReport);
 
 		final TaskExecutorLocalStateStoresManager localStateStoresManager = createTaskExecutorLocalStateStoresManager();
 
@@ -677,24 +679,121 @@ public class TaskExecutorTest extends TestLogger {
 		}
 	}
 
-	@Test
-	public void testTaskSlotTableTerminationOnShutdown() throws Exception {
-		CompletableFuture<Void> taskSlotTableClosingFuture = new CompletableFuture<>();
-		TaskExecutorTestingContext submissionContext = createTaskExecutorTestingContext(
-			TestingTaskSlotTable.<Task>newBuilder().closeAsyncReturns(taskSlotTableClosingFuture).build());
-		final CompletableFuture<Void> taskExecutorTerminationFuture;
+	/**
+	 * Tests that we can submit a task to the TaskManager given that we've allocated a slot there.
+	 */
+	@Test(timeout = 10000L)
+	public void testTaskSubmission() throws Exception {
+		final JobMasterId jobMasterId = JobMasterId.generate();
+		final AllocationID allocationId = new AllocationID();
+		final TaskDeploymentDescriptor taskDeploymentDescriptor = TaskDeploymentDescriptorBuilder
+			.newBuilder(jobId, TestInvokable.class)
+			.setAllocationId(allocationId)
+			.build();
+
+		final OneShotLatch taskInTerminalState = new OneShotLatch();
+		final TaskManagerActions taskManagerActions = createTaskManagerActionsWithTerminalStateTrigger(taskInTerminalState);
+		final JobManagerTable jobManagerTable = createJobManagerTableWithOneJob(jobMasterId, taskManagerActions);
+		final TaskExecutor taskExecutor = createTaskExecutorWithJobManagerTable(jobManagerTable);
+
 		try {
-			submissionContext.start();
+			taskExecutor.start();
+
+			final TaskExecutorGateway taskExecutorGateway = taskExecutor.getSelfGateway(TaskExecutorGateway.class);
+			final JobMasterGateway jobMasterGateway = jobManagerTable.get(jobId).getJobManagerGateway();
+			requestSlotFromTaskExecutor(taskExecutorGateway, jobMasterGateway, allocationId);
+
+			taskExecutorGateway.submitTask(taskDeploymentDescriptor, jobMasterId, timeout);
+
+			CompletableFuture<Boolean> completionFuture = TestInvokable.COMPLETABLE_FUTURE;
+
+			completionFuture.get();
+
+			taskInTerminalState.await();
 		} finally {
-			taskExecutorTerminationFuture = submissionContext.taskExecutor.closeAsync();
+			RpcUtils.terminateRpcEndpoint(taskExecutor, timeout);
+		}
+	}
+
+	/**
+	 * Test invokable which completes the given future when executed.
+	 */
+	public static class TestInvokable extends AbstractInvokable {
+
+		static final CompletableFuture<Boolean> COMPLETABLE_FUTURE = new CompletableFuture<>();
+
+		public TestInvokable(Environment environment) {
+			super(environment);
 		}
 
+		@Override
+		public void invoke() throws Exception {
+			COMPLETABLE_FUTURE.complete(true);
+		}
+	}
+
+	@Test
+	public void testTaskInterruptionAndTerminationOnShutdown() throws Exception {
+		final JobMasterId jobMasterId = JobMasterId.generate();
+		final AllocationID allocationId = new AllocationID();
+		final TaskDeploymentDescriptor taskDeploymentDescriptor = TaskDeploymentDescriptorBuilder
+			.newBuilder(jobId, TestInterruptableInvokable.class)
+			.setAllocationId(allocationId)
+			.build();
+
+		final JobManagerTable jobManagerTable = createJobManagerTableWithOneJob(jobMasterId, new NoOpTaskManagerActions());
+		final TaskExecutor taskExecutor = createTaskExecutorWithJobManagerTable(jobManagerTable);
+
+		try {
+			taskExecutor.start();
+
+			final TaskExecutorGateway taskExecutorGateway = taskExecutor.getSelfGateway(TaskExecutorGateway.class);
+			final JobMasterGateway jobMasterGateway = jobManagerTable.get(jobId).getJobManagerGateway();
+			requestSlotFromTaskExecutor(taskExecutorGateway, jobMasterGateway, allocationId);
+
+			taskExecutorGateway.submitTask(taskDeploymentDescriptor, jobMasterId, timeout);
+
+			TestInterruptableInvokable.STARTED_FUTURE.get();
+		} finally {
+			taskExecutor.closeAsync();
+		}
+
+		// check task has been interrupted
+		TestInterruptableInvokable.INTERRUPTED_FUTURE.get();
+
 		// check task executor is waiting for the task completion and has not terminated yet
+		final CompletableFuture<Void> taskExecutorTerminationFuture = taskExecutor.getTerminationFuture();
 		assertThat(taskExecutorTerminationFuture.isDone(), is(false));
 
-		// check task executor has exited after task slot table termination
-		taskSlotTableClosingFuture.complete(null);
+		// check task executor has exited after task completion
+		TestInterruptableInvokable.DONE_FUTURE.complete(null);
 		taskExecutorTerminationFuture.get();
+	}
+
+	private void requestSlotFromTaskExecutor(
+			TaskExecutorGateway taskExecutorGateway,
+			JobMasterGateway jobMasterGateway,
+			AllocationID allocationId) throws ExecutionException, InterruptedException {
+		final CompletableFuture<Tuple3<ResourceID, InstanceID, SlotReport>> initialSlotReportFuture =
+			new CompletableFuture<>();
+		ResourceManagerId resourceManagerId = createAndRegisterResourceManager(initialSlotReportFuture);
+		initialSlotReportFuture.get();
+
+		taskExecutorGateway
+			.requestSlot(
+				new SlotID(ResourceID.generate(), 0),
+				jobId,
+				allocationId,
+				ResourceProfile.ZERO,
+				jobMasterGateway.getAddress(),
+				resourceManagerId,
+				timeout)
+			.get();
+
+		// now inform the task manager about the new job leader
+		jobManagerLeaderRetriever.notifyListener(
+			jobMasterGateway.getAddress(),
+			jobMasterGateway.getFencingToken().toUUID());
 	}
 
 	private ResourceManagerId createAndRegisterResourceManager(
@@ -714,13 +813,59 @@ public class TaskExecutorTest extends TestLogger {
 		return resourceManagerGateway.getFencingToken();
 	}
 
+	private TaskExecutor createTaskExecutorWithJobManagerTable(JobManagerTable jobManagerTable) throws IOException {
+		final TaskExecutorLocalStateStoresManager localStateStoresManager = createTaskExecutorLocalStateStoresManager();
+		return createTaskExecutor(new TaskManagerServicesBuilder()
+			.setTaskSlotTable(TaskSlotUtils.createTaskSlotTable(1))
+			.setJobManagerTable(jobManagerTable)
+			.setTaskStateManager(localStateStoresManager)
+			.build());
+	}
+
+	private JobManagerTable createJobManagerTableWithOneJob(
+			JobMasterId jobMasterId,
+			TaskManagerActions taskManagerActions) {
+		final TestingJobMasterGateway jobMasterGateway = new TestingJobMasterGatewayBuilder()
+			.setFencingTokenSupplier(() -> jobMasterId)
+			.setOfferSlotsFunction((resourceID, slotOffers) -> CompletableFuture.completedFuture(slotOffers))
+			.build();
+		rpc.registerGateway(jobMasterGateway.getAddress(), jobMasterGateway);
+
+		final JobManagerConnection jobManagerConnection = new JobManagerConnection(
+			jobId,
+			ResourceID.generate(),
+			jobMasterGateway,
+			taskManagerActions,
+			new TestCheckpointResponder(),
+			new TestGlobalAggregateManager(),
+			ContextClassLoaderLibraryCacheManager.INSTANCE,
+			new NoOpResultPartitionConsumableNotifier(),
+			(j, i, r) -> CompletableFuture.completedFuture(null));
+
+		final JobManagerTable jobManagerTable = new JobManagerTable();
+		jobManagerTable.put(jobId, jobManagerConnection);
+		return jobManagerTable;
+	}
+
+	private static TaskManagerActions createTaskManagerActionsWithTerminalStateTrigger(
+		final OneShotLatch taskInTerminalState) {
+		return new NoOpTaskManagerActions() {
+			@Override
+			public void updateTaskExecutionState(TaskExecutionState taskExecutionState) {
+				if (taskExecutionState.getExecutionState().isTerminal()) {
+					taskInTerminalState.trigger();
+				}
+			}
+		};
+	}
+
 	/**
 	 * Tests that a TaskManager detects a job leader for which it has reserved slots. Upon detecting
 	 * the job leader, it will offer all reserved slots to the JobManager.
 	 */
 	@Test
 	public void testJobLeaderDetection() throws Exception {
-		final TaskSlotTable<Task> taskSlotTable = TaskSlotUtils.createTaskSlotTable(1);
+		final TaskSlotTable taskSlotTable = TaskSlotUtils.createTaskSlotTable(1);
 		final JobManagerTable jobManagerTable = new JobManagerTable();
 		final JobLeaderService jobLeaderService = new JobLeaderService(taskManagerLocation, RetryingRegistrationConfiguration.defaultConfiguration());
 
@@ -798,7 +943,7 @@ public class TaskExecutorTest extends TestLogger {
 	 */
 	@Test
 	public void testSlotAcceptance() throws Exception {
-		final TaskSlotTable<Task> taskSlotTable = TaskSlotUtils.createTaskSlotTable(2);
+		final TaskSlotTable taskSlotTable = TaskSlotUtils.createTaskSlotTable(2);
 		final JobManagerTable jobManagerTable = new JobManagerTable();
 		final JobLeaderService jobLeaderService = new JobLeaderService(taskManagerLocation, RetryingRegistrationConfiguration.defaultConfiguration());
 
@@ -891,7 +1036,7 @@ public class TaskExecutorTest extends TestLogger {
 	 */
 	@Test
 	public void testSubmitTaskBeforeAcceptSlot() throws Exception {
-		final TaskSlotTable<Task> taskSlotTable = TaskSlotUtils.createTaskSlotTable(2);
+		final TaskSlotTable taskSlotTable = TaskSlotUtils.createTaskSlotTable(2);
 		final JobManagerTable jobManagerTable = new JobManagerTable();
 		final JobLeaderService jobLeaderService = new JobLeaderService(taskManagerLocation, RetryingRegistrationConfiguration.defaultConfiguration());
 
@@ -900,12 +1045,6 @@ public class TaskExecutorTest extends TestLogger {
 
 		final CompletableFuture<Tuple3<InstanceID, SlotID, AllocationID>> availableSlotFuture = new CompletableFuture<>();
 		resourceManagerGateway.setNotifySlotAvailableConsumer(availableSlotFuture::complete);
-
-		final OneShotLatch taskExecutorIsRegistered = new OneShotLatch();
-		resourceManagerGateway.setSendSlotReportFunction(ignored -> {
-			taskExecutorIsRegistered.trigger();
-			return CompletableFuture.completedFuture(Acknowledge.get());
-		});
 
 		final AllocationID allocationId1 = new AllocationID();
 		final AllocationID allocationId2 = new AllocationID();
@@ -927,6 +1066,8 @@ public class TaskExecutorTest extends TestLogger {
 				return CompletableFuture.completedFuture(Acknowledge.get());
 			})
 			.build();
+
+		jobManagerLeaderRetriever.notifyListener(jobMasterGateway.getAddress(), jobMasterGateway.getFencingToken().toUUID());
 
 		rpc.registerGateway(resourceManagerGateway.getAddress(), resourceManagerGateway);
 		rpc.registerGateway(jobMasterGateway.getAddress(), jobMasterGateway);
@@ -950,26 +1091,19 @@ public class TaskExecutorTest extends TestLogger {
 
 			final TaskExecutorGateway tmGateway = taskManager.getSelfGateway(TaskExecutorGateway.class);
 
-			// wait until registered at the RM
-			taskExecutorIsRegistered.await();
-
-			// request 2 slots for the given allocation ids
-			requestSlots(
-				tmGateway,
-				Arrays.asList(allocationId1, allocationId2),
-				resourceManagerGateway.getFencingToken(),
-				jobMasterGateway.getAddress());
-
-			// notify job leader to start slot offering
-			jobManagerLeaderRetriever.notifyListener(jobMasterGateway.getAddress(), jobMasterGateway.getFencingToken().toUUID());
-
-			// wait until slots have been offered
-			offerSlotsLatch.await();
+			taskSlotTable.allocateSlot(0, jobId, allocationId1, Time.milliseconds(10000L));
+			taskSlotTable.allocateSlot(1, jobId, allocationId2, Time.milliseconds(10000L));
 
 			final TaskDeploymentDescriptor tdd = TaskDeploymentDescriptorBuilder
 				.newBuilder(jobId, NoOpInvokable.class)
 				.setAllocationId(allocationId1)
 				.build();
+
+			// we have to add the job after the TaskExecutor, because otherwise the service has not
+			// been properly started. This will also offer the slots to the job master
+			jobLeaderService.addJob(jobId, jobMasterGateway.getAddress());
+
+			offerSlotsLatch.await();
 
 			// submit the task without having acknowledge the offered slots
 			tmGateway.submitTask(tdd, jobMasterGateway.getFencingToken(), timeout).get();
@@ -977,31 +1111,17 @@ public class TaskExecutorTest extends TestLogger {
 			// acknowledge the offered slots
 			offerResultFuture.complete(Collections.singleton(offer1));
 
-			// check that the rejected slot will be made available again
 			final Tuple3<InstanceID, SlotID, AllocationID> instanceIDSlotIDAllocationIDTuple3 = availableSlotFuture.get();
-			assertThat(instanceIDSlotIDAllocationIDTuple3.f2, equalTo(allocationId2));
+			assertThat(instanceIDSlotIDAllocationIDTuple3.f1, equalTo(new SlotID(taskManagerLocation.getResourceID(), 1)));
+
+			assertTrue(taskSlotTable.tryMarkSlotActive(jobId, allocationId1));
+			assertFalse(taskSlotTable.tryMarkSlotActive(jobId, allocationId2));
+			assertTrue(taskSlotTable.isSlotFree(1));
 
 			// wait for the task completion
 			taskInTerminalState.await();
 		} finally {
 			RpcUtils.terminateRpcEndpoint(taskManager, timeout);
-		}
-	}
-
-	private void requestSlots(TaskExecutorGateway tmGateway, Iterable<? extends AllocationID> allocationIds, ResourceManagerId resourceManagerId, String jobMasterGatewayAddress) {
-		int slotIndex = 0;
-		for (AllocationID allocationId : allocationIds) {
-			final SlotID slotId1 = new SlotID(taskManagerLocation.getResourceID(), slotIndex);
-			tmGateway.requestSlot(
-				slotId1,
-				jobId,
-				allocationId,
-				ResourceProfile.UNKNOWN,
-				jobMasterGatewayAddress,
-				resourceManagerId,
-				Time.seconds(10L)).join();
-
-			slotIndex++;
 		}
 	}
 
@@ -1070,7 +1190,7 @@ public class TaskExecutorTest extends TestLogger {
 		final RecordingHeartbeatServices heartbeatServices = new RecordingHeartbeatServices(heartbeatInterval, heartbeatTimeout);
 		final ResourceID rmResourceID = ResourceID.generate();
 
-		final TaskSlotTable<Task> taskSlotTable = TaskSlotUtils.createTaskSlotTable(1);
+		final TaskSlotTable taskSlotTable = TaskSlotUtils.createTaskSlotTable(1);
 
 		final String rmAddress = "rm";
 		final TestingResourceManagerGateway rmGateway = new TestingResourceManagerGateway(
@@ -1122,7 +1242,7 @@ public class TaskExecutorTest extends TestLogger {
 	 */
 	@Test
 	public void testRemoveJobFromJobLeaderService() throws Exception {
-		final TaskSlotTable<Task> taskSlotTable = TaskSlotUtils.createTaskSlotTable(1);
+		final TaskSlotTable taskSlotTable = TaskSlotUtils.createTaskSlotTable(1);
 
 		final TaskExecutorLocalStateStoresManager localStateStoresManager = createTaskExecutorLocalStateStoresManager();
 
@@ -1214,7 +1334,7 @@ public class TaskExecutorTest extends TestLogger {
 	@Test
 	public void testMaximumRegistrationDurationAfterConnectionLoss() throws Exception {
 		configuration.set(TaskManagerOptions.REGISTRATION_TIMEOUT, TimeUtils.parseDuration("100 ms"));
-		final TaskSlotTable<Task> taskSlotTable = TaskSlotUtils.createTaskSlotTable(1);
+		final TaskSlotTable taskSlotTable = TaskSlotUtils.createTaskSlotTable(1);
 
 		final TaskManagerServices taskManagerServices = new TaskManagerServicesBuilder().setTaskSlotTable(taskSlotTable).build();
 
@@ -1307,7 +1427,7 @@ public class TaskExecutorTest extends TestLogger {
 	 */
 	@Test
 	public void testReconnectionAttemptIfExplicitlyDisconnected() throws Exception {
-		final TaskSlotTable<Task> taskSlotTable = TaskSlotUtils.createTaskSlotTable(1);
+		final TaskSlotTable taskSlotTable = TaskSlotUtils.createTaskSlotTable(1);
 		final TaskManagerLocation taskManagerLocation = new LocalTaskManagerLocation();
 		final TaskExecutor taskExecutor = createTaskExecutor(new TaskManagerServicesBuilder()
 			.setTaskSlotTable(taskSlotTable)
@@ -1415,7 +1535,7 @@ public class TaskExecutorTest extends TestLogger {
 	 */
 	@Test
 	public void testInitialSlotReportFailure() throws Exception {
-		final TaskSlotTable<Task> taskSlotTable = TaskSlotUtils.createTaskSlotTable(1);
+		final TaskSlotTable taskSlotTable = TaskSlotUtils.createTaskSlotTable(1);
 		final TaskManagerLocation taskManagerLocation = new LocalTaskManagerLocation();
 		final TaskManagerServices taskManagerServices = new TaskManagerServicesBuilder()
 			.setTaskSlotTable(taskSlotTable)
@@ -1469,7 +1589,7 @@ public class TaskExecutorTest extends TestLogger {
 	 */
 	@Test
 	public void testOfferSlotToJobMasterAfterTimeout() throws Exception {
-		final TaskSlotTable<Task> taskSlotTable = TaskSlotUtils.createTaskSlotTable(2);
+		final TaskSlotTable taskSlotTable = TaskSlotUtils.createTaskSlotTable(2);
 		final TaskManagerServices taskManagerServices = new TaskManagerServicesBuilder()
 			.setTaskSlotTable(taskSlotTable)
 			.build();
@@ -1649,7 +1769,7 @@ public class TaskExecutorTest extends TestLogger {
 	@Test
 	public void testSyncSlotsWithJobMasterByHeartbeat() throws Exception {
 		final CountDownLatch activeSlots = new CountDownLatch(2);
-		final TaskSlotTable<Task> taskSlotTable = new ActivateSlotNotifyingTaskSlotTable(
+		final TaskSlotTable taskSlotTable = new ActivateSlotNotifyingTaskSlotTable(
 				2,
 				activeSlots);
 		final TaskManagerServices taskManagerServices = new TaskManagerServicesBuilder().setTaskSlotTable(taskSlotTable).build();
@@ -1817,9 +1937,23 @@ public class TaskExecutorTest extends TestLogger {
 
 	@Test
 	public void testDynamicSlotAllocation() throws Exception {
+		final JobMasterId jobMasterId = JobMasterId.generate();
 		final AllocationID allocationId = new AllocationID();
-		try (TaskExecutorTestingContext submissionContext = createTaskExecutorTestingContext(2)) {
-			submissionContext.start();
+
+		final OneShotLatch taskInTerminalState = new OneShotLatch();
+		final TaskManagerActions taskManagerActions = createTaskManagerActionsWithTerminalStateTrigger(taskInTerminalState);
+		final JobManagerTable jobManagerTable = createJobManagerTableWithOneJob(jobMasterId, taskManagerActions);
+		final TaskSlotTable taskSlotTable = TaskSlotUtils.createTaskSlotTable(2);
+		final TaskExecutor taskExecutor = createTaskExecutor(new TaskManagerServicesBuilder()
+			.setTaskSlotTable(taskSlotTable)
+			.setJobManagerTable(jobManagerTable)
+			.build());
+
+		try {
+			taskExecutor.start();
+
+			final TaskExecutorGateway taskExecutorGateway = taskExecutor.getSelfGateway(TaskExecutorGateway.class);
+			final JobMasterGateway jobMasterGateway = jobManagerTable.get(jobId).getJobManagerGateway();
 			final CompletableFuture<Tuple3<ResourceID, InstanceID, SlotReport>> initialSlotReportFuture =
 				new CompletableFuture<>();
 			ResourceManagerId resourceManagerId = createAndRegisterResourceManager(initialSlotReportFuture);
@@ -1827,24 +1961,25 @@ public class TaskExecutorTest extends TestLogger {
 			final ResourceProfile resourceProfile = DEFAULT_RESOURCE_PROFILE
 				.merge(ResourceProfile.newBuilder().setCpuCores(0.1).build());
 
-			submissionContext.taskExecutor
-				.getSelfGateway(TaskExecutorGateway.class)
+			taskExecutorGateway
 				.requestSlot(
 					SlotID.generateDynamicSlotID(ResourceID.generate()),
 					jobId,
 					allocationId,
 					resourceProfile,
-					submissionContext.jobMasterGateway.getAddress(),
+					jobMasterGateway.getAddress(),
 					resourceManagerId,
 					timeout)
 				.get();
 
 			ResourceID resourceId = ResourceID.generate();
-			SlotReport slotReport = submissionContext.taskSlotTable.createSlotReport(resourceId);
+			SlotReport slotReport = taskSlotTable.createSlotReport(resourceId);
 			assertThat(slotReport, containsInAnyOrder(
-				new SlotStatus(new SlotID(resourceId, 0), DEFAULT_RESOURCE_PROFILE),
-				new SlotStatus(new SlotID(resourceId, 1), DEFAULT_RESOURCE_PROFILE),
-				new SlotStatus(SlotID.generateDynamicSlotID(resourceId), resourceProfile, jobId, allocationId)));
+					new SlotStatus(new SlotID(resourceId, 0), DEFAULT_RESOURCE_PROFILE),
+					new SlotStatus(new SlotID(resourceId, 1), DEFAULT_RESOURCE_PROFILE),
+					new SlotStatus(SlotID.generateDynamicSlotID(resourceId), resourceProfile, jobId, allocationId)));
+		} finally {
+			RpcUtils.terminateRpcEndpoint(taskExecutor, timeout);
 		}
 	}
 
@@ -1856,7 +1991,7 @@ public class TaskExecutorTest extends TestLogger {
 	}
 
 	private TaskExecutor createTaskExecutor(int numberOFSlots) {
-		final TaskSlotTable<Task> taskSlotTable = TaskSlotUtils.createTaskSlotTable(numberOFSlots);
+		final TaskSlotTable taskSlotTable = TaskSlotUtils.createTaskSlotTable(numberOFSlots);
 		final TaskManagerLocation taskManagerLocation = new LocalTaskManagerLocation();
 		final TaskManagerServices taskManagerServices = new TaskManagerServicesBuilder()
 			.setTaskSlotTable(taskSlotTable)
@@ -1907,95 +2042,6 @@ public class TaskExecutorTest extends TestLogger {
 			testingFatalErrorHandler,
 			new TaskExecutorPartitionTrackerImpl(taskManagerServices.getShuffleEnvironment()),
 			TaskManagerRunner.createBackPressureSampleService(configuration, rpc.getScheduledExecutor()));
-	}
-
-	private TaskExecutorTestingContext createTaskExecutorTestingContext(int numberOfSlots) throws IOException {
-		return createTaskExecutorTestingContext(TaskSlotUtils.createTaskSlotTable(numberOfSlots));
-	}
-
-	private TaskExecutorTestingContext createTaskExecutorTestingContext(final TaskSlotTable<Task> taskSlotTable) throws IOException {
-		final OneShotLatch offerSlotsLatch = new OneShotLatch();
-		final TestingJobMasterGateway jobMasterGateway = new TestingJobMasterGatewayBuilder()
-			.setOfferSlotsFunction((resourceID, slotOffers) -> {
-				offerSlotsLatch.trigger();
-				return CompletableFuture.completedFuture(slotOffers);
-			}).build();
-		rpc.registerGateway(jobMasterGateway.getAddress(), jobMasterGateway);
-
-		final JobLeaderService jobLeaderService = new JobLeaderService(
-			taskManagerLocation,
-			RetryingRegistrationConfiguration.defaultConfiguration());
-
-		TaskExecutorLocalStateStoresManager stateStoresManager = createTaskExecutorLocalStateStoresManager();
-		final TestingTaskExecutor taskExecutor = createTestingTaskExecutor(new TaskManagerServicesBuilder()
-			.setTaskSlotTable(taskSlotTable)
-			.setJobLeaderService(jobLeaderService)
-			.setTaskStateManager(stateStoresManager)
-			.build());
-
-		jobManagerLeaderRetriever.notifyListener(jobMasterGateway.getAddress(), jobMasterGateway.getFencingToken().toUUID());
-		return new TaskExecutorTestingContext(offerSlotsLatch, jobMasterGateway, jobLeaderService, taskSlotTable, taskExecutor);
-	}
-
-	private class TaskExecutorTestingContext implements AutoCloseable {
-		private final OneShotLatch offerSlotsLatch;
-		private final TestingJobMasterGateway jobMasterGateway;
-		private final JobLeaderService jobLeaderService;
-		private final TaskSlotTable taskSlotTable;
-		private final TestingTaskExecutor taskExecutor;
-
-		private TaskExecutorTestingContext(
-				OneShotLatch offerSlotsLatch,
-				TestingJobMasterGateway jobMasterGateway,
-				JobLeaderService jobLeaderService,
-				TaskSlotTable taskSlotTable,
-				TestingTaskExecutor taskExecutor) {
-			this.offerSlotsLatch = offerSlotsLatch;
-			this.jobMasterGateway = jobMasterGateway;
-			this.jobLeaderService = jobLeaderService;
-			this.taskSlotTable = taskSlotTable;
-			this.taskExecutor = taskExecutor;
-		}
-
-		private void start() {
-			taskExecutor.start();
-			taskExecutor.waitUntilStarted();
-		}
-
-		private void startAllocateSlotAndSubmit(
-			final Class<? extends AbstractInvokable> task) throws Exception {
-			final AllocationID allocationId = new AllocationID();
-
-			start();
-
-			taskSlotTable.allocateSlot(0, jobId, allocationId, Time.milliseconds(10000L));
-
-			// we have to add the job after the TaskExecutor, because otherwise the service has not
-			// been properly started.
-			jobLeaderService.addJob(jobId, jobMasterGateway.getAddress());
-			offerSlotsLatch.await();
-
-			taskExecutor
-				.getSelfGateway(TaskExecutorGateway.class)
-				.submitTask(
-					createTaskDeploymentDescriptor(allocationId, task),
-					jobMasterGateway.getFencingToken(),
-					timeout);
-		}
-
-		private TaskDeploymentDescriptor createTaskDeploymentDescriptor(
-			final AllocationID allocationId,
-			final Class<? extends AbstractInvokable> task) throws IOException {
-			return TaskDeploymentDescriptorBuilder
-				.newBuilder(jobId, task)
-				.setAllocationId(allocationId)
-				.build();
-		}
-
-		@Override
-		public void close() throws ExecutionException, InterruptedException, TimeoutException {
-			RpcUtils.terminateRpcEndpoint(taskExecutor, timeout);
-		}
 	}
 
 	private static final class StartStopNotifyingLeaderRetrievalService implements LeaderRetrievalService {
@@ -2093,7 +2139,21 @@ public class TaskExecutorTest extends TestLogger {
 		}
 	}
 
-	private static final class AllocateSlotNotifyingTaskSlotTable extends TaskSlotTableImpl<Task> {
+	private static final class TestingTaskSlotTable extends TaskSlotTable {
+		private final Queue<SlotReport> slotReports;
+
+		private TestingTaskSlotTable(Queue<SlotReport> slotReports) {
+			super(1, createTotalResourceProfile(1), DEFAULT_RESOURCE_PROFILE, MemoryManager.MIN_PAGE_SIZE, createDefaultTimerService(timeout.toMilliseconds()));
+			this.slotReports = slotReports;
+		}
+
+		@Override
+		public SlotReport createSlotReport(ResourceID resourceId) {
+			return slotReports.poll();
+		}
+	}
+
+	private static final class AllocateSlotNotifyingTaskSlotTable extends TaskSlotTable {
 
 		private final OneShotLatch allocateSlotLatch;
 
@@ -2119,7 +2179,7 @@ public class TaskExecutorTest extends TestLogger {
 		}
 	}
 
-	private static final class ActivateSlotNotifyingTaskSlotTable extends TaskSlotTableImpl<Task> {
+	private static final class ActivateSlotNotifyingTaskSlotTable extends TaskSlotTable {
 
 		private final CountDownLatch slotsToActivate;
 
@@ -2137,6 +2197,38 @@ public class TaskExecutorTest extends TestLogger {
 			}
 
 			return result;
+		}
+	}
+
+	/**
+	 * Test invokable which completes the given future when interrupted (can be used only once).
+	 */
+	public static class TestInterruptableInvokable extends AbstractInvokable {
+		private static final CompletableFuture<Void> INTERRUPTED_FUTURE = new CompletableFuture<>();
+		private static final CompletableFuture<Void> STARTED_FUTURE = new CompletableFuture<>();
+		private static final CompletableFuture<Void> DONE_FUTURE = new CompletableFuture<>();
+
+		public TestInterruptableInvokable(Environment environment) {
+			super(environment);
+		}
+
+		@Override
+		public void invoke() {
+			STARTED_FUTURE.complete(null);
+
+			try {
+				INTERRUPTED_FUTURE.get();
+			} catch (InterruptedException e) {
+				INTERRUPTED_FUTURE.complete(null);
+			} catch (ExecutionException e) {
+				ExceptionUtils.rethrow(e);
+			}
+
+			try {
+				DONE_FUTURE.get();
+			} catch (ExecutionException | InterruptedException e) {
+				ExceptionUtils.rethrow(e);
+			}
 		}
 	}
 }

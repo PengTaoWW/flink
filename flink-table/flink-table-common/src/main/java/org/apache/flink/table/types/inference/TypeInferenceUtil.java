@@ -21,7 +21,7 @@ package org.apache.flink.table.types.inference;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.table.api.TableException;
 import org.apache.flink.table.api.ValidationException;
-import org.apache.flink.table.catalog.DataTypeFactory;
+import org.apache.flink.table.catalog.DataTypeLookup;
 import org.apache.flink.table.functions.FunctionDefinition;
 import org.apache.flink.table.functions.FunctionKind;
 import org.apache.flink.table.types.DataType;
@@ -99,14 +99,6 @@ public final class TypeInferenceUtil {
 			TypeInference typeInference,
 			CallContext callContext,
 			@Nullable DataType outputType) {
-		return adaptArguments(typeInference, callContext, outputType, false);
-	}
-
-	private static AdaptedCallContext adaptArguments(
-			TypeInference typeInference,
-			CallContext callContext,
-			@Nullable DataType outputType,
-			boolean allowUnknownInputTypes) {
 		final List<DataType> actualTypes = callContext.getArgumentDataTypes();
 
 		typeInference.getTypedArguments()
@@ -123,8 +115,7 @@ public final class TypeInferenceUtil {
 		final AdaptedCallContext adaptedCallContext = inferInputTypes(
 			typeInference,
 			callContext,
-			outputType,
-			allowUnknownInputTypes);
+			outputType);
 
 		// final check if the call is valid after casting
 		final List<DataType> expectedTypes = adaptedCallContext.getArgumentDataTypes();
@@ -166,9 +157,9 @@ public final class TypeInferenceUtil {
 	 * Generates a signature of the given {@link FunctionDefinition}.
 	 */
 	public static String generateSignature(
-			TypeInference typeInference,
 			String name,
-			FunctionDefinition definition) {
+			FunctionDefinition definition,
+			TypeInference typeInference) {
 		if (typeInference.getNamedArguments().isPresent() || typeInference.getTypedArguments().isPresent()) {
 			return formatNamedOrTypedArguments(name, typeInference);
 		}
@@ -189,9 +180,9 @@ public final class TypeInferenceUtil {
 			String.format(
 				"Invalid input arguments. Expected signatures are:\n%s",
 				generateSignature(
-					typeInference,
 					callContext.getName(),
-					callContext.getFunctionDefinition())
+					callContext.getFunctionDefinition(),
+					typeInference)
 			),
 			cause);
 	}
@@ -256,7 +247,7 @@ public final class TypeInferenceUtil {
 			this.innerCallPosition = innerCallPosition;
 		}
 
-		private Optional<DataType> inferOutputType(DataTypeFactory typeFactory) {
+		private Optional<DataType> inferOutputType(DataTypeLookup lookup) {
 			final boolean isValidCount = validateArgumentCount(
 				typeInference.getInputTypeStrategy().getArgumentCount(),
 				argumentCount,
@@ -266,15 +257,8 @@ public final class TypeInferenceUtil {
 			}
 			// for "takes_string(this_function(NULL))" simulate "takes_string(NULL)"
 			// for retrieving the output type of "this_function(NULL)"
-			final CallContext callContext = new UnknownCallContext(
-				typeFactory,
-				name,
-				functionDefinition,
-				argumentCount);
-
-			// We might not be able to infer the input types at this moment, if the surrounding function
-			// does not provide an explicit input type strategy. Skip the check for unknown types in input types.
-			final AdaptedCallContext adaptedContext = adaptArguments(typeInference, callContext, null, true);
+			final CallContext callContext = new UnknownCallContext(lookup, name, functionDefinition, argumentCount);
+			final AdaptedCallContext adaptedContext = adaptArguments(typeInference, callContext, null);
 			return typeInference.getInputTypeStrategy()
 				.inferInputTypes(adaptedContext, false)
 				.map(dataTypes -> dataTypes.get(innerCallPosition));
@@ -341,7 +325,7 @@ public final class TypeInferenceUtil {
 			// use information of surrounding call to determine output type of this call
 			final DataType outputType;
 			if (surroundingInfo != null) {
-				outputType = surroundingInfo.inferOutputType(callContext.getDataTypeFactory())
+				outputType = surroundingInfo.inferOutputType(callContext.getDataTypeLookup())
 					.orElse(null);
 			} else {
 				outputType = null;
@@ -448,8 +432,7 @@ public final class TypeInferenceUtil {
 	private static AdaptedCallContext inferInputTypes(
 			TypeInference typeInference,
 			CallContext callContext,
-			@Nullable DataType outputType,
-			boolean allowUnknownInputTypes) {
+			@Nullable DataType outputType) {
 
 		final AdaptedCallContext adaptedCallContext = new AdaptedCallContext(callContext, outputType);
 
@@ -460,8 +443,8 @@ public final class TypeInferenceUtil {
 			.inferInputTypes(adaptedCallContext, true)
 			.orElseThrow(() -> new ValidationException("Invalid input arguments."));
 
-		if (!allowUnknownInputTypes && inferredDataTypes.stream().anyMatch(TypeInferenceUtil::isUnknown)) {
-			// input must not contain unknown types at this point
+		// input must not contain unknown types at this point
+		if (inferredDataTypes.stream().anyMatch(TypeInferenceUtil::isUnknown)) {
 			throw new ValidationException("Invalid use of untyped NULL in arguments.");
 		}
 

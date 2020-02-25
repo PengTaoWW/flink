@@ -21,7 +21,7 @@ package org.apache.flink.table.types.extraction.utils;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.table.annotation.DataTypeHint;
 import org.apache.flink.table.annotation.FunctionHint;
-import org.apache.flink.table.catalog.DataTypeFactory;
+import org.apache.flink.table.catalog.DataTypeLookup;
 
 import javax.annotation.Nullable;
 
@@ -62,15 +62,15 @@ public final class FunctionTemplate {
 	 * Creates an instance using the given {@link FunctionHint}. It resolves explicitly defined data
 	 * types.
 	 */
-	public static FunctionTemplate fromAnnotation(DataTypeFactory typeFactory, FunctionHint hint) {
+	public static FunctionTemplate fromAnnotation(DataTypeLookup lookup, FunctionHint hint) {
 		return new FunctionTemplate(
 			createSignatureTemplate(
-				typeFactory,
+				lookup,
 				defaultAsNull(hint, FunctionHint::input),
 				defaultAsNull(hint, FunctionHint::argumentNames),
 				hint.isVarArgs()),
-			createResultTemplate(typeFactory, defaultAsNull(hint, FunctionHint::accumulator)),
-			createResultTemplate(typeFactory, defaultAsNull(hint, FunctionHint::output))
+			createResultTemplate(lookup, defaultAsNull(hint, FunctionHint::accumulator)),
+			createResultTemplate(lookup, defaultAsNull(hint, FunctionHint::output))
 		);
 	}
 
@@ -126,7 +126,7 @@ public final class FunctionTemplate {
 	}
 
 	private static @Nullable FunctionSignatureTemplate createSignatureTemplate(
-			DataTypeFactory typeFactory,
+			DataTypeLookup lookup,
 			@Nullable DataTypeHint[] input,
 			@Nullable String[] argumentNames,
 			boolean isVarArg) {
@@ -135,21 +135,21 @@ public final class FunctionTemplate {
 		}
 		return FunctionSignatureTemplate.of(
 			Arrays.stream(input)
-				.map(dataTypeHint -> createArgumentTemplate(typeFactory, dataTypeHint))
+				.map(dataTypeHint -> createArgumentTemplate(lookup, dataTypeHint))
 				.collect(Collectors.toList()),
 			isVarArg,
 			argumentNames);
 	}
 
 	private static @Nullable FunctionResultTemplate createResultTemplate(
-			DataTypeFactory typeFactory,
+			DataTypeLookup lookup,
 			@Nullable DataTypeHint hint) {
 		if (hint == null) {
 			return null;
 		}
 		final DataTypeTemplate template;
 		try {
-			template = DataTypeTemplate.fromAnnotation(typeFactory, hint);
+			template = DataTypeTemplate.fromAnnotation(lookup, hint);
 		} catch (Throwable t) {
 			throw extractionError(t, "Error in data type hint annotation.");
 		}
@@ -161,9 +161,9 @@ public final class FunctionTemplate {
 	}
 
 	private static FunctionArgumentTemplate createArgumentTemplate(
-			DataTypeFactory typeFactory,
+			DataTypeLookup lookup,
 			DataTypeHint hint) {
-		final DataTypeTemplate template = DataTypeTemplate.fromAnnotation(typeFactory, hint);
+		final DataTypeTemplate template = DataTypeTemplate.fromAnnotation(lookup, hint);
 		if (template.dataType != null) {
 			return FunctionArgumentTemplate.of(template.dataType);
 		} else if (template.inputGroup != null) {

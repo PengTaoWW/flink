@@ -28,6 +28,10 @@ import org.apache.flink.contrib.streaming.state.RocksDBWriteBatchWrapper;
 import org.apache.flink.contrib.streaming.state.RocksIteratorWrapper;
 import org.apache.flink.contrib.streaming.state.ttl.RocksDbTtlCompactFiltersManager;
 import org.apache.flink.core.fs.CloseableRegistry;
+import org.apache.flink.core.fs.FSDataInputStream;
+import org.apache.flink.core.fs.FileStatus;
+import org.apache.flink.core.fs.FileSystem;
+import org.apache.flink.core.fs.Path;
 import org.apache.flink.core.memory.DataInputView;
 import org.apache.flink.core.memory.DataInputViewStreamWrapper;
 import org.apache.flink.metrics.MetricGroup;
@@ -44,7 +48,6 @@ import org.apache.flink.runtime.state.StateHandleID;
 import org.apache.flink.runtime.state.StateSerializerProvider;
 import org.apache.flink.runtime.state.StreamStateHandle;
 import org.apache.flink.runtime.state.metainfo.StateMetaInfoSnapshot;
-import org.apache.flink.util.FileUtils;
 import org.apache.flink.util.IOUtils;
 
 import org.rocksdb.ColumnFamilyDescriptor;
@@ -61,10 +64,7 @@ import javax.annotation.Nonnull;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -187,8 +187,9 @@ public class RocksDBIncrementalRestoreOperation<K> extends AbstractRocksDBRestor
 	}
 
 	private void restoreFromRemoteState(IncrementalRemoteKeyedStateHandle stateHandle) throws Exception {
-		// used as restore source for IncrementalRemoteKeyedStateHandle
-		final Path tmpRestoreInstancePath = instanceBasePath.getAbsoluteFile().toPath().resolve(UUID.randomUUID().toString());
+		final Path tmpRestoreInstancePath = new Path(
+			instanceBasePath.getAbsolutePath(),
+			UUID.randomUUID().toString()); // used as restore source for IncrementalRemoteKeyedStateHandle
 		try {
 			restoreFromLocalState(
 				transferRemoteStateToLocalDirectory(tmpRestoreInstancePath, stateHandle));
@@ -245,7 +246,10 @@ public class RocksDBIncrementalRestoreOperation<K> extends AbstractRocksDBRestor
 
 	private void cleanUpPathQuietly(@Nonnull Path path) {
 		try {
-			FileUtils.deleteDirectory(path.toFile());
+			FileSystem fileSystem = path.getFileSystem();
+			if (fileSystem.exists(path)) {
+				fileSystem.delete(path, true);
+			}
 		} catch (IOException ex) {
 			LOG.warn("Failed to clean up path " + path, ex);
 		}
@@ -292,7 +296,7 @@ public class RocksDBIncrementalRestoreOperation<K> extends AbstractRocksDBRestor
 					", but found " + rawStateHandle.getClass());
 			}
 
-			Path temporaryRestoreInstancePath = instanceBasePath.getAbsoluteFile().toPath().resolve(UUID.randomUUID().toString());
+			Path temporaryRestoreInstancePath = new Path(instanceBasePath.getAbsolutePath() + UUID.randomUUID().toString());
 			try (RestoredDBInstance tmpRestoreDBInfo = restoreDBInstanceFromStateHandle(
 				(IncrementalRemoteKeyedStateHandle) rawStateHandle,
 				temporaryRestoreInstancePath);
@@ -423,7 +427,7 @@ public class RocksDBIncrementalRestoreOperation<K> extends AbstractRocksDBRestor
 			new ArrayList<>(stateMetaInfoSnapshots.size() + 1);
 
 		RocksDB restoreDb = RocksDBOperationUtils.openDB(
-			temporaryRestoreInstancePath.toString(),
+			temporaryRestoreInstancePath.getPath(),
 			columnFamilyDescriptors,
 			columnFamilyHandles,
 			RocksDBOperationUtils.createColumnFamilyOptions(columnFamilyOptionsFactory, "default"),
@@ -457,18 +461,26 @@ public class RocksDBIncrementalRestoreOperation<K> extends AbstractRocksDBRestor
 	 * a local state.
 	 */
 	private void restoreInstanceDirectoryFromPath(Path source, String instanceRocksDBPath) throws IOException {
-		final Path instanceRocksDBDirectory = Paths.get(instanceRocksDBPath);
-		final Path[] files = FileUtils.listDirectory(source);
 
-		for (Path file : files) {
-			final String fileName = file.getFileName().toString();
-			final Path targetFile = instanceRocksDBDirectory.resolve(fileName);
+		FileSystem fileSystem = source.getFileSystem();
+
+		final FileStatus[] fileStatuses = fileSystem.listStatus(source);
+
+		if (fileStatuses == null) {
+			throw new IOException("Cannot list file statues. Directory " + source + " does not exist.");
+		}
+
+		for (FileStatus fileStatus : fileStatuses) {
+			final Path filePath = fileStatus.getPath();
+			final String fileName = filePath.getName();
+			File restoreFile = new File(source.getPath(), fileName);
+			File targetFile = new File(instanceRocksDBPath, fileName);
 			if (fileName.endsWith(SST_FILE_SUFFIX)) {
 				// hardlink'ing the immutable sst-files.
-				Files.createLink(targetFile, file);
+				Files.createLink(targetFile.toPath(), restoreFile.toPath());
 			} else {
 				// true copy for all other files.
-				Files.copy(file, targetFile, StandardCopyOption.REPLACE_EXISTING);
+				Files.copy(restoreFile.toPath(), targetFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
 			}
 		}
 	}
@@ -478,7 +490,7 @@ public class RocksDBIncrementalRestoreOperation<K> extends AbstractRocksDBRestor
 	 */
 	private KeyedBackendSerializationProxy<K> readMetaData(StreamStateHandle metaStateHandle) throws Exception {
 
-		InputStream inputStream = null;
+		FSDataInputStream inputStream = null;
 
 		try {
 			inputStream = metaStateHandle.openInputStream();

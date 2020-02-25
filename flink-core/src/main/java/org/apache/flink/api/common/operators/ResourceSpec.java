@@ -284,9 +284,9 @@ public final class ResourceSpec implements Serializable {
 		}
 		return "ResourceSpec{" +
 			"cpuCores=" + cpuCores.getValue() +
-			", taskHeapMemory=" + taskHeapMemory.toHumanReadableString() +
-			", taskOffHeapMemory=" + taskOffHeapMemory.toHumanReadableString() +
-			", managedMemory=" + managedMemory.toHumanReadableString() + extResources +
+			", taskHeapMemory=" + taskHeapMemory +
+			", taskOffHeapMemory=" + taskOffHeapMemory +
+			", managedMemory=" + managedMemory + extResources +
 			'}';
 	}
 
@@ -304,7 +304,7 @@ public final class ResourceSpec implements Serializable {
 	// ------------------------------------------------------------------------
 
 	public static Builder newBuilder(double cpuCores, int taskHeapMemoryMB) {
-		return new Builder(new CPUResource(cpuCores), MemorySize.ofMebiBytes(taskHeapMemoryMB));
+		return new Builder(new CPUResource(cpuCores), MemorySize.parse(taskHeapMemoryMB + "m"));
 	}
 
 	/**
@@ -334,7 +334,7 @@ public final class ResourceSpec implements Serializable {
 		}
 
 		public Builder setTaskHeapMemoryMB(int taskHeapMemoryMB) {
-			this.taskHeapMemory = MemorySize.ofMebiBytes(taskHeapMemoryMB);
+			this.taskHeapMemory = MemorySize.parse(taskHeapMemoryMB + "m");
 			return this;
 		}
 
@@ -344,7 +344,7 @@ public final class ResourceSpec implements Serializable {
 		}
 
 		public Builder setOffTaskHeapMemoryMB(int taskOffHeapMemoryMB) {
-			this.taskOffHeapMemory = MemorySize.ofMebiBytes(taskOffHeapMemoryMB);
+			this.taskOffHeapMemory = MemorySize.parse(taskOffHeapMemoryMB + "m");
 			return this;
 		}
 
@@ -354,7 +354,7 @@ public final class ResourceSpec implements Serializable {
 		}
 
 		public Builder setManagedMemoryMB(int managedMemoryMB) {
-			this.managedMemory = MemorySize.ofMebiBytes(managedMemoryMB);
+			this.managedMemory = MemorySize.parse(managedMemoryMB + "m");
 			return this;
 		}
 

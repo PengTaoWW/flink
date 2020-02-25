@@ -287,7 +287,7 @@ public class ProcessPythonEnvironmentManagerTest {
 		sysEnv.put("FLINK_HOME", "/flink");
 
 		try (ProcessPythonEnvironmentManager environmentManager =
-				new ProcessPythonEnvironmentManager(dependencyInfo, new String[] {tmpDir}, sysEnv)) {
+				new ProcessPythonEnvironmentManager(dependencyInfo, new String[] {tmpDir}, null, sysEnv)) {
 			environmentManager.open();
 			String retrievalToken = environmentManager.createRetrievalToken();
 
@@ -310,11 +310,11 @@ public class ProcessPythonEnvironmentManagerTest {
 			null);
 
 		try (ProcessPythonEnvironmentManager environmentManager = new ProcessPythonEnvironmentManager(
-				dependencyInfo, new String[] {tmpDir}, new HashMap<>())) {
+				dependencyInfo, new String[] {tmpDir}, "/tmp/log", new HashMap<>())) {
 			environmentManager.open();
 			Map<String, String> env = environmentManager.constructEnvironmentVariables();
 			Map<String, String> expected = getBasicExpectedEnv(environmentManager);
-			expected.put("BOOT_LOG_DIR", environmentManager.getBaseDirectory());
+			expected.put("FLINK_LOG_DIR", "/tmp/log");
 			assertEquals(expected, env);
 		}
 	}
@@ -387,13 +387,12 @@ public class ProcessPythonEnvironmentManagerTest {
 				String.join(File.separator, tmpBase, "pyflink.zip"),
 				String.join(File.separator, tmpBase, "py4j-0.10.8.1-src.zip"),
 				String.join(File.separator, tmpBase, "cloudpickle-1.2.2-src.zip")));
-		map.put("BOOT_LOG_DIR", tmpBase);
 		return map;
 	}
 
 	private static ProcessPythonEnvironmentManager createBasicPythonEnvironmentManager(
 			PythonDependencyInfo dependencyInfo) {
 		return new ProcessPythonEnvironmentManager(
-			dependencyInfo, new String[] {tmpDir}, new HashMap<>());
+			dependencyInfo, new String[] {tmpDir}, null, new HashMap<>());
 	}
 }

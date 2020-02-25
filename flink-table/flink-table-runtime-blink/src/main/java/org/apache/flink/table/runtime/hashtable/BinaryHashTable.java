@@ -364,7 +364,7 @@ public class BinaryHashTable extends BaseHybridHashTable {
 	private boolean prepareNextPartition() throws IOException {
 		// finalize and cleanup the partitions of the current table
 		for (final BinaryHashPartition p : this.partitionsBeingBuilt) {
-			p.finalizeProbePhase(this.internalPool, this.partitionsPending, type.needSetProbed());
+			p.finalizeProbePhase(this.availableMemory, this.partitionsPending, type.needSetProbed());
 		}
 
 		this.partitionsBeingBuilt.clear();
@@ -458,11 +458,11 @@ public class BinaryHashTable extends BaseHybridHashTable {
 		//        that single partition.
 		// 2) We can not guarantee that enough memory segments are available and read the partition
 		//    in, distributing its data among newly created partitions.
-		final int totalBuffersAvailable = this.internalPool.freePages() + this.buildSpillRetBufferNumbers;
+		final int totalBuffersAvailable = this.availableMemory.size() + this.buildSpillRetBufferNumbers;
 		if (totalBuffersAvailable != this.totalNumBuffers) {
 			throw new RuntimeException(String.format("Hash Join bug in memory management: Memory buffers leaked." +
 					" availableMemory(%s), buildSpillRetBufferNumbers(%s), reservedNumBuffers(%s)",
-					internalPool.freePages(), buildSpillRetBufferNumbers, totalNumBuffers));
+					availableMemory.size(), buildSpillRetBufferNumbers, totalNumBuffers));
 		}
 
 		long numBuckets = p.getBuildSideRecordCount() / BinaryHashBucketArea.NUM_ENTRIES_PER_BUCKET + 1;
@@ -569,7 +569,7 @@ public class BinaryHashTable extends BaseHybridHashTable {
 		for (int i = this.partitionsBeingBuilt.size() - 1; i >= 0; --i) {
 			final BinaryHashPartition p = this.partitionsBeingBuilt.get(i);
 			try {
-				p.clearAllMemory(this.internalPool);
+				p.clearAllMemory(this.availableMemory);
 			} catch (Exception e) {
 				LOG.error("Error during partition cleanup.", e);
 			}
@@ -578,7 +578,7 @@ public class BinaryHashTable extends BaseHybridHashTable {
 
 		// clear the partitions that are still to be done (that have files on disk)
 		for (final BinaryHashPartition p : this.partitionsPending) {
-			p.clearAllMemory(this.internalPool);
+			p.clearAllMemory(this.availableMemory);
 		}
 	}
 
@@ -614,7 +614,7 @@ public class BinaryHashTable extends BaseHybridHashTable {
 		// grab as many buffers as are available directly
 		MemorySegment currBuff;
 		while (this.buildSpillRetBufferNumbers > 0 && (currBuff = this.buildSpillReturnBuffers.poll()) != null) {
-			returnPage(currBuff);
+			this.availableMemory.add(currBuff);
 			this.buildSpillRetBufferNumbers--;
 		}
 		numSpillFiles++;

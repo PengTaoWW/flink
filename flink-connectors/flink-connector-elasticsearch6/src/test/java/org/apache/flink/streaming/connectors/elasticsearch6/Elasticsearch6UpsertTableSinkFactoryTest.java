@@ -70,7 +70,7 @@ public class Elasticsearch6UpsertTableSinkFactoryTest extends ElasticsearchUpser
 			DOC_TYPE,
 			KEY_DELIMITER,
 			KEY_NULL_LITERAL,
-			JsonRowSerializationSchema.builder().withTypeInfo(schema.toRowType()).build(),
+			new JsonRowSerializationSchema(schema.toRowType()),
 			XContentType.JSON,
 			new DummyFailureHandler(),
 			createTestSinkOptions());
@@ -88,7 +88,7 @@ public class Elasticsearch6UpsertTableSinkFactoryTest extends ElasticsearchUpser
 				DOC_TYPE,
 				KEY_DELIMITER,
 				KEY_NULL_LITERAL,
-				JsonRowSerializationSchema.builder().withTypeInfo(schema.toRowType()).build(),
+				new JsonRowSerializationSchema(schema.toRowType()),
 				XContentType.JSON,
 				Elasticsearch6UpsertTableSink.UPDATE_REQUEST_FACTORY,
 				new int[0]));

@@ -21,6 +21,7 @@ package org.apache.flink.table.client.gateway.local.result;
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.api.java.typeutils.RowTypeInfo;
 import org.apache.flink.table.api.TableSchema;
 import org.apache.flink.table.client.gateway.SqlExecutionException;
 import org.apache.flink.table.client.gateway.TypedResult;
@@ -90,6 +91,7 @@ public class MaterializedCollectStreamResult<C> extends CollectStreamResult<C> i
 
 	@VisibleForTesting
 	public MaterializedCollectStreamResult(
+			RowTypeInfo outputType,
 			TableSchema tableSchema,
 			ExecutionConfig config,
 			InetAddress gatewayAddress,
@@ -97,7 +99,7 @@ public class MaterializedCollectStreamResult<C> extends CollectStreamResult<C> i
 			int maxRowCount,
 			int overcommitThreshold,
 			ClassLoader classLoader) {
-		super(tableSchema, config, gatewayAddress, gatewayPort, classLoader);
+		super(outputType, tableSchema, config, gatewayAddress, gatewayPort, classLoader);
 
 		if (maxRowCount <= 0) {
 			this.maxRowCount = Integer.MAX_VALUE;
@@ -118,6 +120,7 @@ public class MaterializedCollectStreamResult<C> extends CollectStreamResult<C> i
 	}
 
 	public MaterializedCollectStreamResult(
+			RowTypeInfo outputType,
 			TableSchema tableSchema,
 			ExecutionConfig config,
 			InetAddress gatewayAddress,
@@ -126,6 +129,7 @@ public class MaterializedCollectStreamResult<C> extends CollectStreamResult<C> i
 			ClassLoader classLoader) {
 
 		this(
+			outputType,
 			tableSchema,
 			config,
 			gatewayAddress,

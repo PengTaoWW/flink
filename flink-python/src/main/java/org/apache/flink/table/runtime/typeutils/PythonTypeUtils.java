@@ -86,6 +86,10 @@ public final class PythonTypeUtils {
 		return logicalType.accept(new LogicalTypeToBlinkTypeSerializerConverter());
 	}
 
+	public static FlinkFnApi.Schema.FieldType toProtoType(LogicalType logicalType) {
+		return logicalType.accept(new LogicalTypeToProtoTypeConverter());
+	}
+
 	/**
 	 * Convert LogicalType to conversion class for flink planner.
 	 */
@@ -289,10 +293,7 @@ public final class PythonTypeUtils {
 		}
 	}
 
-	/**
-	 * Converter That convert the logicalType to the related Prototype.
-	 */
-	public static class LogicalTypeToProtoTypeConverter extends LogicalTypeDefaultVisitor<FlinkFnApi.Schema.FieldType> {
+	private static class LogicalTypeToProtoTypeConverter extends LogicalTypeDefaultVisitor<FlinkFnApi.Schema.FieldType> {
 		@Override
 		public FlinkFnApi.Schema.FieldType visit(BooleanType booleanType) {
 			return FlinkFnApi.Schema.FieldType.newBuilder()

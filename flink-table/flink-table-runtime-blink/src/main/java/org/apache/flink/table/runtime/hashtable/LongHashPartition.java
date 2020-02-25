@@ -32,7 +32,6 @@ import org.apache.flink.runtime.memory.AbstractPagedOutputView;
 import org.apache.flink.table.dataformat.BinaryRow;
 import org.apache.flink.table.runtime.typeutils.BinaryRowSerializer;
 import org.apache.flink.table.runtime.util.FileChannelUtil;
-import org.apache.flink.table.runtime.util.LazyMemorySegmentPool;
 import org.apache.flink.table.runtime.util.RowIterator;
 import org.apache.flink.util.MathUtils;
 import org.apache.flink.util.Preconditions;
@@ -44,6 +43,7 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.LinkedBlockingQueue;
 
@@ -770,13 +770,13 @@ public class LongHashPartition extends AbstractPagedInputView implements Seekabl
 		}
 	}
 
-	void clearAllMemory(LazyMemorySegmentPool pool) {
+	void clearAllMemory(List<MemorySegment> target) {
 		// return current buffers from build side and probe side
 		if (this.buildSideWriteBuffer != null) {
 			if (this.buildSideWriteBuffer.getCurrentSegment() != null) {
-				pool.returnPage(this.buildSideWriteBuffer.getCurrentSegment());
+				target.add(this.buildSideWriteBuffer.getCurrentSegment());
 			}
-			pool.returnAll(this.buildSideWriteBuffer.targetList);
+			target.addAll(this.buildSideWriteBuffer.targetList);
 			this.buildSideWriteBuffer.targetList.clear();
 			this.buildSideWriteBuffer = null;
 		}
@@ -784,7 +784,7 @@ public class LongHashPartition extends AbstractPagedInputView implements Seekabl
 
 		// return the partition buffers
 		if (this.partitionBuffers != null) {
-			pool.returnAll(Arrays.asList(this.partitionBuffers));
+			Collections.addAll(target, this.partitionBuffers);
 			this.partitionBuffers = null;
 		}
 

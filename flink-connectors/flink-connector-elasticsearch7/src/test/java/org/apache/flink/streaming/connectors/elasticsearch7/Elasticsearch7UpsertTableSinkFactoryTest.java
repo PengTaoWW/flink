@@ -69,7 +69,7 @@ public class Elasticsearch7UpsertTableSinkFactoryTest extends ElasticsearchUpser
 			ElasticsearchUpsertTableSinkFactoryTestBase.DOC_TYPE,
 			ElasticsearchUpsertTableSinkFactoryTestBase.KEY_DELIMITER,
 			ElasticsearchUpsertTableSinkFactoryTestBase.KEY_NULL_LITERAL,
-			JsonRowSerializationSchema.builder().withTypeInfo(schema.toRowType()).build(),
+			new JsonRowSerializationSchema(schema.toRowType()),
 			XContentType.JSON,
 			new DummyFailureHandler(),
 			createTestSinkOptions());
@@ -87,7 +87,7 @@ public class Elasticsearch7UpsertTableSinkFactoryTest extends ElasticsearchUpser
 				ElasticsearchUpsertTableSinkFactoryTestBase.DOC_TYPE,
 				ElasticsearchUpsertTableSinkFactoryTestBase.KEY_DELIMITER,
 				ElasticsearchUpsertTableSinkFactoryTestBase.KEY_NULL_LITERAL,
-				JsonRowSerializationSchema.builder().withTypeInfo(schema.toRowType()).build(),
+				new JsonRowSerializationSchema(schema.toRowType()),
 				XContentType.JSON,
 				Elasticsearch7UpsertTableSink.UPDATE_REQUEST_FACTORY,
 				new int[0]));

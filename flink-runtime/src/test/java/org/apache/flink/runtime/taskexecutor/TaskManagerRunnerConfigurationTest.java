@@ -33,6 +33,7 @@ import org.apache.flink.runtime.rpc.RpcService;
 import org.apache.flink.util.IOUtils;
 import org.apache.flink.util.TestLogger;
 
+import net.jcip.annotations.NotThreadSafe;
 import org.hamcrest.Description;
 import org.hamcrest.TypeSafeMatcher;
 import org.junit.Rule;
@@ -41,7 +42,6 @@ import org.junit.rules.TemporaryFolder;
 import sun.net.util.IPAddressUtil;
 
 import javax.annotation.Nullable;
-import javax.annotation.concurrent.NotThreadSafe;
 
 import java.io.File;
 import java.io.IOException;

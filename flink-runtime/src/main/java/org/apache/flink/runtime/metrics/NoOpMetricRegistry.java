@@ -32,7 +32,7 @@ public class NoOpMetricRegistry implements MetricRegistry {
 
 	public static final MetricRegistry INSTANCE = new NoOpMetricRegistry();
 
-	public NoOpMetricRegistry() {
+	private NoOpMetricRegistry() {
 	}
 
 	@Override

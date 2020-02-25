@@ -139,7 +139,7 @@ class SortAggITCase
   // NOTE: Spark has agg functions collect_list(), collect_set().
   //       instead, we'll test LISTAGG() here
   @Test
-  def testListAgg(): Unit = {
+  def testConcatAgg(): Unit = {
     checkResult(
       "SELECT LISTAGG(c, '-'), LISTAGG(c) FROM SmallTable3",
       Seq(

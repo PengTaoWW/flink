@@ -31,7 +31,6 @@ import org.apache.flink.table.runtime.generated.RecordComparator;
 import org.apache.flink.table.runtime.operators.TableStreamOperator;
 import org.apache.flink.table.runtime.operators.over.frame.OverWindowFrame;
 import org.apache.flink.table.runtime.typeutils.AbstractRowSerializer;
-import org.apache.flink.table.runtime.util.LazyMemorySegmentPool;
 import org.apache.flink.table.runtime.util.ResettableExternalBuffer;
 import org.apache.flink.table.runtime.util.StreamRecordCollector;
 
@@ -75,13 +74,10 @@ public class BufferDataOverWindowOperator extends TableStreamOperator<BaseRow>
 		genComparator = null;
 
 		MemoryManager memManager = getContainingTask().getEnvironment().getMemoryManager();
-		LazyMemorySegmentPool pool = new LazyMemorySegmentPool(
-				this,
-				memManager,
-				(int) (computeMemorySize() / memManager.getPageSize()));
 		this.currentData = new ResettableExternalBuffer(
+				getContainingTask().getEnvironment().getMemoryManager(),
 				getContainingTask().getEnvironment().getIOManager(),
-				pool,
+				memManager.allocatePages(this, (int) (computeMemorySize() / memManager.getPageSize())),
 				serializer, isRowAllInFixedPart);
 
 		collector = new StreamRecordCollector<>(output);

@@ -136,11 +136,6 @@ public final class CsvRowSerializationSchema implements SerializationSchema<Row>
 			return this;
 		}
 
-		public Builder disableQuoteCharacter() {
-			this.csvSchema = this.csvSchema.rebuild().disableQuoteChar().build();
-			return this;
-		}
-
 		public Builder setQuoteCharacter(char c) {
 			this.csvSchema = this.csvSchema.rebuild().setQuoteChar(c).build();
 			return this;

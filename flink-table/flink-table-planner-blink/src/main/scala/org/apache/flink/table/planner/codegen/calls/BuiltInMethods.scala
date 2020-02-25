@@ -218,12 +218,12 @@ object BuiltInMethods {
   val TIMESTAMP_TO_STRING = Types.lookupMethod(
     classOf[SqlDateTimeUtils],
     "timestampToString",
-    classOf[SqlTimestamp], classOf[Int])
+    classOf[SqlTimestamp])
 
   val TIMESTAMP_TO_STRING_TIME_ZONE = Types.lookupMethod(
     classOf[SqlDateTimeUtils],
     "timestampToString",
-    classOf[SqlTimestamp], classOf[TimeZone], classOf[Int])
+    classOf[SqlTimestamp], classOf[TimeZone])
 
   val TIMESTAMP_TO_TIMESTAMP_WITH_LOCAL_ZONE = Types.lookupMethod(
     classOf[SqlDateTimeUtils],
